@@ -178,7 +178,11 @@ public:
     //
     // Calls collate() on all contained TagBoxes.
     //
-    void collate (Vector<IntVect>& TheGlobalCollateSpace) const;
+    void collate (Vector<IntVect>& TheGlobalCollateSpace) const; 
+    //
+    // Removes Duplicates from Collate Spaces
+    //
+    void remove_duplicates (Vector<IntVect>& ivec) const;
 };
 
 }

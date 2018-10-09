@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <climits>
+#include <unordered_set>
 
 #include <AMReX_TagBox.H>
 #include <AMReX_Geometry.H>
@@ -490,6 +491,17 @@ TagBoxArray::numTags () const
     return ntag;
 }
 
+void 
+TagBoxArray::remove_duplicates(Vector<IntVect>& ivec) const
+{
+     BL_PROFILE("TagBoxArray::remove_duplicates()"); 
+     std::unordered_set<IntVect, IntVect::shift_hasher> s; 
+     for ( auto i : ivec) 
+        s.insert(i); 
+     ivec.assign(s.begin(), s.end()); 
+}
+
+
 void
 TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 {
@@ -520,7 +532,8 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 
     if (count > 0)
     {
-        amrex::RemoveDuplicates(TheLocalCollateSpace);
+          remove_duplicates(TheLocalCollateSpace); 
+//        amrex::RemoveDuplicates(TheLocalCollateSpace);
 	count = TheLocalCollateSpace.size();
     }
     //
@@ -570,7 +583,8 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 
     if (ParallelDescriptor::IOProcessor())
     {
-        amrex::RemoveDuplicates(TheGlobalCollateSpace);
+//        amrex::RemoveDuplicates(TheGlobalCollateSpace);
+          remove_duplicates(TheGlobalCollateSpace); 
 	numtags = TheGlobalCollateSpace.size();
     }
 
