@@ -495,9 +495,9 @@ void
 TagBoxArray::remove_duplicates(Vector<IntVect>& ivec) const
 {
      BL_PROFILE("TagBoxArray::remove_duplicates()"); 
-     std::unordered_set<IntVect, IntVect::shift_hasher> s; 
-     for ( auto i : ivec) 
-        s.insert(i); 
+     std::unordered_set<IntVect, IntVect::shift_hasher> s(ivec.begin(), ivec.end()); 
+//     for ( auto i : ivec) 
+//        s.insert(i); 
      ivec.assign(s.begin(), s.end()); 
 }
 

@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <AMReX_BLassert.H>
+#include <AMReX_BLProfiler.H>
 #ifdef AMREX_SPACEDIM
 #include <AMReX_Array.H>
 #include <AMReX_TypeTraits.H>
@@ -162,6 +163,7 @@ namespace amrex
 
     template <class T> 
     void RemoveDuplicates(Vector<T>& vec) {
+        BL_PROFILE("amrex::RemoveDuplicates()"); 
         std::sort(vec.begin(), vec.end());
         auto it = std::unique(vec.begin(), vec.end());
         vec.erase(it, vec.end());
