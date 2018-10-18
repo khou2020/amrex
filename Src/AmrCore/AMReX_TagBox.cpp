@@ -9,7 +9,7 @@
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_BLProfiler.H>
 #include <AMReX_ccse-mpi.H>
-
+// #define Chard 1
 namespace amrex {
 
 TagBox::TagBox () {}
@@ -225,6 +225,7 @@ TagBox::numTags (const Box& b) const
    return tempTagBox.numTags();
 }
 
+#ifdef Chard
 long
 TagBox::collate (Vector<IntVect>& ar, int start) const
 {
@@ -258,6 +259,42 @@ TagBox::collate (Vector<IntVect>& ar, int start) const
     }
     return count;
 }
+#else
+
+long
+TagBox::collate (std::unordered_set<IntVect, IntVect::shift_hasher> & ar, int start) const 
+{ 
+    BL_ASSERT(start >= 0); 
+    //
+    // Starting at given offset of array ar, enter location (IntVect) of
+    // each tagged cell in tagbox.
+    //
+    long count       = 0;
+    IntVect d_length = domain.size();
+    const int* len   = d_length.getVect();
+    const int* lo    = domain.loVect();
+    const TagType* d = dataPtr();
+    int ni = 1, nj = 1, nk = 1;
+    AMREX_D_TERM(ni = len[0]; , nj = len[1]; , nk = len[2];)
+
+    for (int k = 0; k < nk; k++)
+    {
+        for (int j = 0; j < nj; j++)
+        {
+            for (int i = 0; i < ni; i++)
+            {
+                const TagType* dn = d + AMREX_D_TERM(i, +j*len[0], +k*len[0]*len[1]);
+                if (*dn != TagBox::CLEAR)
+                {
+                    ar.emplace(IntVect(AMREX_D_DECL(lo[0]+i,lo[1]+j,lo[2]+k)));
+                    count++;
+                }
+            }
+        }
+    }
+    return count;
+} 
+#endif  // */
 
 Vector<int>
 TagBox::tags () const
@@ -495,13 +532,11 @@ void
 TagBoxArray::remove_duplicates(Vector<IntVect>& ivec) const
 {
      BL_PROFILE("TagBoxArray::remove_duplicates()"); 
-     std::unordered_set<IntVect, IntVect::shift_hasher> s(ivec.begin(), ivec.end()); 
-//     for ( auto i : ivec) 
-//        s.insert(i); 
-     ivec.assign(s.begin(), s.end()); 
+     std::unordered_set<IntVect, IntVect::shift_hasher> s(ivec.begin(), ivec.end());
+     ivec.assign(s.begin(), s.end());
 }
 
-
+#ifdef Chard 
 void
 TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 {
@@ -521,7 +556,7 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     // Local space for holding just those tags we want to gather to the root cpu.
     //
     Vector<IntVect> TheLocalCollateSpace(count);
-
+    //std::unordered_set<IntVect, IntVect::shift_haser> TheLocalCollateSpace(count); 
     count = 0;
 
     // unsafe to do OMP
@@ -583,9 +618,8 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 
     if (ParallelDescriptor::IOProcessor())
     {
-//        amrex::RemoveDuplicates(TheGlobalCollateSpace);
           remove_duplicates(TheGlobalCollateSpace); 
-	numtags = TheGlobalCollateSpace.size();
+          numtags = TheGlobalCollateSpace.size();
     }
 
     //
@@ -602,6 +636,100 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     TheGlobalCollateSpace = TheLocalCollateSpace;
 #endif
 }
+
+#else
+void
+TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
+{
+    BL_PROFILE("TagBoxArray::collate()");
+
+    long count = 0;
+
+#ifdef _OPENMP
+#pragma omp parallel reduction(+:count)
+#endif
+    for (MFIter fai(*this); fai.isValid(); ++fai)
+    {
+        count += get(fai).numTags();
+    } // */
+    //
+    // Local space for holding just those tags we want to gather to the root cpu.
+    //
+    std::unordered_set<IntVect, IntVect::shift_hasher> TheLocalCollateSpace;
+    TheLocalCollateSpace.reserve(count);
+    count = 0; 
+    // unsafe to do OMP
+    for (MFIter fai(*this); fai.isValid(); ++fai)
+    {
+        count += get(fai).collate(TheLocalCollateSpace,count);
+    }
+    count = TheLocalCollateSpace.size(); 
+    //
+    // The total number of tags system wide that must be collated.
+    // This is really just an estimate of the upper bound due to duplicates.
+    // While we've removed duplicates per MPI process there's still more systemwide.
+    //
+    long numtags = count;
+
+    ParallelDescriptor::ReduceLongSum(numtags);
+
+    if (numtags == 0) {
+	TheGlobalCollateSpace.clear();
+	return;
+    }
+    TheGlobalCollateSpace.resize(numtags);
+    //
+    // This holds all tags after they've been gather'd and unique'ified.
+    //
+    // Each CPU needs an identical copy since they all must go through grid_places() which isn't parallelized.
+
+
+#if BL_USE_MPI
+    //
+    // Tell root CPU how many tags each CPU will be sending.
+    //
+    const int IOProcNumber = ParallelDescriptor::IOProcessorNumber();
+    count = TheLocalCollateSpace.size()*AMREX_SPACEDIM;  // Convert from count of tags to count of integers to expect.
+    const std::vector<long>& countvec = ParallelDescriptor::Gather(count, IOProcNumber);
+   
+    std::vector<long> offset(countvec.size(),0L);
+    if (ParallelDescriptor::IOProcessor())
+    {
+        for (int i = 1, N = offset.size(); i < N; i++) {
+	    offset[i] = offset[i-1] + countvec[i-1];
+	}
+    }
+    //
+    // Gather all the tags to IOProcNumber into TheGlobalCollateSpace.
+    //
+    BL_ASSERT(sizeof(IntVect) == AMREX_SPACEDIM * sizeof(int));
+    Vector<IntVect> temp;
+    temp.reserve(TheLocalCollateSpace.size());
+    temp.insert(temp.end(), TheLocalCollateSpace.begin(), TheLocalCollateSpace.end());  
+    const int* psend = (count > 0) ? temp[0].getVect(): 0;
+    int* precv = TheGlobalCollateSpace[0].getVect();
+    ParallelDescriptor::Gatherv(psend, count,
+				precv, countvec, offset, IOProcNumber); 
+    if (ParallelDescriptor::IOProcessor())
+    {
+        remove_duplicates(TheGlobalCollateSpace);
+     	numtags = TheGlobalCollateSpace.size();
+    } //*/
+    //
+    // Now broadcast them back to the other processors.
+    //
+    ParallelDescriptor::Bcast(&numtags, 1, IOProcNumber);
+    ParallelDescriptor::Bcast(TheGlobalCollateSpace[0].getVect(), numtags*AMREX_SPACEDIM, IOProcNumber);
+    TheGlobalCollateSpace.resize(numtags);
+#else
+    //
+    // Copy TheLocalCollateSpace to TheGlobalCollateSpace.
+    //
+    TheGlobalCollateSpace.assign(TheLocalCollateSpace.begin(), TheLocalCollateSpace.end());
+#endif
+}
+#endif
+   // */
 
 void
 TagBoxArray::setVal (const BoxList& bl,

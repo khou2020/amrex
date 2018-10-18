@@ -1,6 +1,7 @@
 
 #ifndef AMREX_TagBox_H_
 #define AMREX_TagBox_H_
+#include <unordered_set>
 
 #include <AMReX_IntVect.H>
 #include <AMReX_Box.H>
@@ -70,7 +71,9 @@ public:
     // starting at given location.  Returns the number of
     // collated points.
     //
-    long collate (Vector<IntVect>& ar, int start) const;
+//    long collate (Vector<IntVect>& ar, int start) const;
+    long collate (std::unordered_set<IntVect, IntVect::shift_hasher>& ar, int start) const;
+
     //
     // Returns number of tagged cells in specified Box.
     //
