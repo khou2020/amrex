@@ -643,7 +643,7 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     for (MFIter fai(*this); fai.isValid(); ++fai)
     {
         count += get(fai).numTags();
-    } // */
+    } 
     //
     // Local space for holding just those tags we want to gather to the root cpu.
     //
@@ -666,8 +666,8 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     ParallelDescriptor::ReduceLongSum(numtags);
 
     if (numtags == 0) {
-	TheGlobalCollateSpace.clear();
-	return;
+        TheGlobalCollateSpace.clear();
+        return;
     }
     TheGlobalCollateSpace.resize(numtags);
     //
@@ -681,7 +681,7 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     // Tell root CPU how many tags each CPU will be sending.
     //
     const int IOProcNumber = ParallelDescriptor::IOProcessorNumber();
-    count = TheLocalCollateSpace.size()*AMREX_SPACEDIM;  // Convert from count of tags to count of integers to expect.
+    count *= AMREX_SPACEDIM;  // Convert from count of tags to count of integers to expect.
     const std::vector<long>& countvec = ParallelDescriptor::Gather(count, IOProcNumber);
    
     std::vector<long> offset(countvec.size(),0L);
@@ -695,18 +695,32 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     // Gather all the tags to IOProcNumber into TheGlobalCollateSpace.
     //
     BL_ASSERT(sizeof(IntVect) == AMREX_SPACEDIM * sizeof(int));
+    //
+    // MPI doesn't play well unordered_set, so shove it into a vector
+    //
     Vector<IntVect> temp;
     temp.reserve(TheLocalCollateSpace.size());
     temp.insert(temp.end(), TheLocalCollateSpace.begin(), TheLocalCollateSpace.end());  
     const int* psend = (count > 0) ? temp[0].getVect(): 0;
     int* precv = TheGlobalCollateSpace[0].getVect();
+    //
+    //  Send and Recieve
+    // 
     ParallelDescriptor::Gatherv(psend, count,
 				precv, countvec, offset, IOProcNumber); 
+
+    //
+    // Even though the local collate spaces contain no duplicates, there may be duplicates 
+    // Between MPI ranks. So we remove the duplicates from TheGlobalCollateSpace. 
+    // TagBox::remove_duplicates -> loads the vector into an unordered_set and then back into the vector. 
+    // This is cheaper than sorting then erasing duplicates. 
+    //
+
     if (ParallelDescriptor::IOProcessor())
     {
         remove_duplicates(TheGlobalCollateSpace);
      	numtags = TheGlobalCollateSpace.size();
-    } //*/
+    }  
     //
     // Now broadcast them back to the other processors.
     //
