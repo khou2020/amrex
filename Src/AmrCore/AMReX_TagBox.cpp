@@ -261,15 +261,9 @@ TagBox::collate (Vector<IntVect>& ar, int start) const
 }
 #else
 
-long
-TagBox::collate (std::unordered_set<IntVect, IntVect::shift_hasher> & ar, int start) const 
+void
+TagBox::collate (std::unordered_set<IntVect, IntVect::shift_hasher> & ar) const 
 { 
-    BL_ASSERT(start >= 0); 
-    //
-    // Starting at given offset of array ar, enter location (IntVect) of
-    // each tagged cell in tagbox.
-    //
-    long count       = 0;
     IntVect d_length = domain.size();
     const int* len   = d_length.getVect();
     const int* lo    = domain.loVect();
@@ -287,12 +281,10 @@ TagBox::collate (std::unordered_set<IntVect, IntVect::shift_hasher> & ar, int st
                 if (*dn != TagBox::CLEAR)
                 {
                     ar.emplace(IntVect(AMREX_D_DECL(lo[0]+i,lo[1]+j,lo[2]+k)));
-                    count++;
                 }
             }
         }
     }
-    return count;
 } 
 #endif  // */
 
@@ -556,7 +548,6 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     // Local space for holding just those tags we want to gather to the root cpu.
     //
     Vector<IntVect> TheLocalCollateSpace(count);
-    //std::unordered_set<IntVect, IntVect::shift_haser> TheLocalCollateSpace(count); 
     count = 0;
 
     // unsafe to do OMP
@@ -567,8 +558,8 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 
     if (count > 0)
     {
-          remove_duplicates(TheLocalCollateSpace); 
-//        amrex::RemoveDuplicates(TheLocalCollateSpace);
+//          remove_duplicates(TheLocalCollateSpace); 
+        amrex::RemoveDuplicates(TheLocalCollateSpace);
 	count = TheLocalCollateSpace.size();
     }
     //
@@ -618,7 +609,8 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 
     if (ParallelDescriptor::IOProcessor())
     {
-          remove_duplicates(TheGlobalCollateSpace); 
+//          remove_duplicates(TheGlobalCollateSpace); 
+          amrex::RemoveDuplicates(TheGlobalCollateSpace); 
           numtags = TheGlobalCollateSpace.size();
     }
 
@@ -661,7 +653,7 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     // unsafe to do OMP
     for (MFIter fai(*this); fai.isValid(); ++fai)
     {
-        count += get(fai).collate(TheLocalCollateSpace,count);
+        get(fai).collate(TheLocalCollateSpace);
     }
     count = TheLocalCollateSpace.size(); 
     //

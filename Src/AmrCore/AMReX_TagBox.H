@@ -72,7 +72,7 @@ public:
     // collated points.
     //
 //    long collate (Vector<IntVect>& ar, int start) const;
-    long collate (std::unordered_set<IntVect, IntVect::shift_hasher>& ar, int start) const;
+    void collate (std::unordered_set<IntVect, IntVect::shift_hasher>& ar) const;
 
     //
     // Returns number of tagged cells in specified Box.
