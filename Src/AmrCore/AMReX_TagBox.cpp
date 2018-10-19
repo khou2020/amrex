@@ -524,7 +524,9 @@ void
 TagBoxArray::remove_duplicates(Vector<IntVect>& ivec) const
 {
      BL_PROFILE("TagBoxArray::remove_duplicates()"); 
-     std::unordered_set<IntVect, IntVect::shift_hasher> s(ivec.begin(), ivec.end());
+     std::unordered_set<IntVect, IntVect::shift_hasher> s;
+     s.reserve(ivec.size()); 
+     s.insert(ivec.begin(), ivec.end()); 
      ivec.assign(s.begin(), s.end());
 }
 
@@ -633,6 +635,7 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 void
 TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
 {
+    ParallelDescriptor::Barrier();
     BL_PROFILE("TagBoxArray::collate()");
 
     long count = 0;
