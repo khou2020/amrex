@@ -229,6 +229,7 @@ TagBox::numTags (const Box& b) const
 long
 TagBox::collate (Vector<IntVect>& ar, int start) const
 {
+    BL_PROFILE("TagBox::collate()");
     BL_ASSERT(start >= 0);
     //
     // Starting at given offset of array ar, enter location (IntVect) of
@@ -264,6 +265,7 @@ TagBox::collate (Vector<IntVect>& ar, int start) const
 void
 TagBox::collate (std::unordered_set<IntVect, IntVect::shift_hasher> & ar) const 
 { 
+    BL_PROFILE("TagBox::collate()");
     IntVect d_length = domain.size();
     const int* len   = d_length.getVect();
     const int* lo    = domain.loVect();
@@ -525,9 +527,10 @@ TagBoxArray::remove_duplicates(Vector<IntVect>& ivec) const
 {
      BL_PROFILE("TagBoxArray::remove_duplicates()"); 
      std::unordered_set<IntVect, IntVect::shift_hasher> s;
-//     s.reserve(ivec.size()); 
-     for (auto i : ivec) s.emplace(i); 
+     s.reserve(ivec.size()); 
+     for (auto i : ivec) s.insert(i); 
      ivec.assign(s.begin(), s.end());
+     ivec.shrink_to_fit(); 
 }
 
 #ifdef Chard 
