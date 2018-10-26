@@ -711,10 +711,11 @@ TagBoxArray::collate (Vector<IntVect>& TheGlobalCollateSpace) const
     int* precv = TheGlobalCollateSpace[0].getVect();
     //
     //  Send and Recieve
-    // 
+    //
+    BL_PROFILE_VAR("ParallelDescriptor::Gatherv()", gather);  
     ParallelDescriptor::Gatherv(psend, count,
 				precv, countvec, offset, IOProcNumber); 
-
+    BL_PROFILE_VAR_STOP(gather); 
     //
     // Even though the local collate spaces contain no duplicates, there may be duplicates 
     // Between MPI ranks. So we remove the duplicates from TheGlobalCollateSpace. 
