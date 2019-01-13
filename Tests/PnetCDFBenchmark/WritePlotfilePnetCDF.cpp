@@ -241,7 +241,7 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
         giv[gi] = 0;
         gint[gi] = 0;
     }
-    int gintvect_id[3];
+    int gintvect_id[3] = {0};
     err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gLDA + "_" + "ghost").c_str(), NC_INT, 3, gintvect_id); ERR
     
     const Real *a_dx = geom[level].CellSize();
