@@ -52,7 +52,7 @@ namespace {
         // Write integer attribute
         for (std::map<std::string, int>::const_iterator p = m_int.begin(); p!= m_int.end(); ++p){
             attname = prefix + p->first;
-            std::replace(attname.begin(), attname.end(), '/', '_'); 
+            std::replace(attname.begin(), attname.end(), '/', '.'); 
             err = ncmpi_put_att_int(ncid, NC_GLOBAL, attname.c_str(), NC_INT, 1, &(p->second)); ERR
         }
 
@@ -135,7 +135,7 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
         //std::cout << "Write_H5M_time_1_1 = " << dPlotFileTime712 << "  seconds." << std::endl;
     }
     
-    std::string vGroupName = "_";
+    std::string vGroupName = "";
     int vFile;
     
     // Write one level at a time
@@ -230,10 +230,10 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
     }
         
     char levelName[10];
-    sprintf(levelName, "_level_%i", level);
+    sprintf(levelName, "level_%i", level);
     std::string gL(vGroupName + levelName);
-    std::string gLDA(gL + "_data_attributes");
-    err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gLDA + "comps").c_str(), NC_INT, 1, &nComp); ERR
+    std::string gLDA(gL + ".data_attributes");
+    err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gLDA + ".comps").c_str(), NC_INT, 1, &nComp); ERR
 
     IntVect giv;
     int gint[BL_SPACEDIM];
@@ -242,16 +242,16 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
         gint[gi] = 0;
     }
     int gintvect_id[3] = {0};
-    err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gLDA + "_" + "ghost").c_str(), NC_INT, 3, gintvect_id); ERR
+    err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gLDA + "." + "ghost").c_str(), NC_INT, 3, gintvect_id); ERR
     
     const Real *a_dx = geom[level].CellSize();
     Real vData(dt);
     std::string vName("dt");
     
-    err = ncmpi_put_att_double(vFile, NC_GLOBAL, (gL + "_" + vName).c_str(), NC_DOUBLE, 1, &vData); ERR
-    err = ncmpi_put_att_double(vFile, NC_GLOBAL, (gL + "_" + "dx").c_str(), NC_DOUBLE, 1, &(a_dx[level])); ERR
-    err = ncmpi_put_att_double(vFile, NC_GLOBAL, (gL + "_" + "time").c_str(), NC_DOUBLE, 1, &time); ERR
-    err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gL + "_" + "prob_domain").c_str(), NC_INT, 6, b3int); ERR
+    err = ncmpi_put_att_double(vFile, NC_GLOBAL, (gL + "." + vName).c_str(), NC_DOUBLE, 1, &vData); ERR
+    err = ncmpi_put_att_double(vFile, NC_GLOBAL, (gL + "." + "dx").c_str(), NC_DOUBLE, 1, &(a_dx[level])); ERR
+    err = ncmpi_put_att_double(vFile, NC_GLOBAL, (gL + "." + "time").c_str(), NC_DOUBLE, 1, &time); ERR
+    err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gL + "." + "prob_domain").c_str(), NC_INT, 6, b3int); ERR
 
     // ASim@lbl.gov 6/15/2017
     double dPlotFileTime73(ParallelDescriptor::second());
@@ -278,7 +278,7 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
     
     flatdims[0] = (MPI_Offset)grids.size();
     err = ncmpi_def_dim(vFile, "procdataspace_0", flatdims[0], procdataspacedimids); ERR
-    err = ncmpi_def_var(vFile, (gL + "_" + pdsname).c_str(), NC_INT, 1, procdataspacedimids, &procdataset); ERR
+    err = ncmpi_def_var(vFile, (gL + "." + pdsname).c_str(), NC_INT, 1, procdataspacedimids, &procdataset); ERR
  
     
     int bab3int[2 * BL_SPACEDIM];
@@ -292,13 +292,13 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
 
     err = ncmpi_def_dim(vFile, "boxdataspace_0", flatdims[0], boxdataspacedimids); ERR
     err = ncmpi_def_dim(vFile, "boxdataspace_1", 6, boxdataspacedimids + 1); ERR
-    err = ncmpi_def_var(vFile, (gL + "_" + bdsname).c_str(), NC_INT, 2, boxdataspacedimids, &boxdataset); ERR
+    err = ncmpi_def_var(vFile, (gL + "." + bdsname).c_str(), NC_INT, 2, boxdataspacedimids, &boxdataset); ERR
 
     int iRefRatio(1);
     if(level < nlevels-1) {
         iRefRatio = ref_ratio[level][0];
     }
-    err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gL + "_" + "ref_ratio").c_str(), NC_INT, 1, &iRefRatio); ERR
+    err = ncmpi_put_att_int(vFile, NC_GLOBAL, (gL + "." + "ref_ratio").c_str(), NC_INT, 1, &iRefRatio); ERR
 
     // ASim@lbl.gov 6/15/2017
     double dPlotFileTime75(ParallelDescriptor::second());
@@ -332,7 +332,7 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
     MPI_Offset oflatdims[1];
     oflatdims[0] = (MPI_Offset)sortedGrids.size() + 1;
     err = ncmpi_def_dim(vFile, "offsetdataspace_0", oflatdims[0], offsetdataspacedimids); ERR
-    err = ncmpi_def_var(vFile, (gL + "_" + odsname).c_str(), NC_INT64, 1, offsetdataspacedimids, &offsetdataset); ERR
+    err = ncmpi_def_var(vFile, (gL + "." + odsname).c_str(), NC_INT64, 1, offsetdataspacedimids, &offsetdataset); ERR
 
     Vector<unsigned long long> offsets(sortedGrids.size() + 1);
     unsigned long long currentOffset(0L);
@@ -408,13 +408,13 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
             dxfer_template = H5P_DEFAULT;
             ret = H5Dwrite(offsetdataset, H5T_NATIVE_LLONG, omemdataspace, offsetdataspace,
                            dxfer_template, NULL);
-            if(ret < 0) { std::cout << "_here 3:  ret = " << ret << std::endl; }
+            if(ret < 0) { std::cout << ".here 3:  ret = " << ret << std::endl; }
             ret = H5Dwrite(boxdataset, babox_id, bmemdataspace, boxdataspace,
                            dxfer_template, NULL);
-            if(ret < 0) { std::cout << "_here 4:  ret = " << ret << std::endl; }
+            if(ret < 0) { std::cout << ".here 4:  ret = " << ret << std::endl; }
             ret = H5Dwrite(procdataset, H5T_NATIVE_INT, pmemdataspace, procdataspace,
                            dxfer_template, NULL);
-            if(ret < 0) { std::cout << "_here 5:  ret = " << ret << std::endl; }
+            if(ret < 0) { std::cout << ".here 5:  ret = " << ret << std::endl; }
             */
         }
         
@@ -463,7 +463,7 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
         int dataspacedimmids[1];
         err = ncmpi_def_dim(vFile, "dataspace", hs_allprocsize[0], dataspacedimmids); ERR
         int dataset;
-        err = ncmpi_def_var(vFile, (gL + "_" + dataname).c_str(), NC_DOUBLE, 1, dataspacedimmids, &dataset); ERR
+        err = ncmpi_def_var(vFile, (gL + "." + dataname).c_str(), NC_DOUBLE, 1, dataspacedimmids, &dataset); ERR
         err = ncmpi_enddef(vFile); ERR  // Switch to data mode for writing the main data
 
         // ASim@lbl.gov CollectiveMetaData
@@ -529,7 +529,7 @@ void WriteMultiLevelPlotfilePNETCDF (const std::string &plotfilename,
         BL_PROFILE_VAR_STOP(h5dwg);
         ERR
         //if(ret < 0) {
-        //    std::cout << ParallelDescriptor::MyProc() << "_here 6:  ret = " << ret << std::endl;
+        //    std::cout << ParallelDescriptor::MyProc() << ".here 6:  ret = " << ret << std::endl;
         //}
 
 #ifdef NCINDEP
