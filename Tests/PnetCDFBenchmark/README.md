@@ -82,88 +82,85 @@ the benchmark also reports time spent in individual steps.
 
     MPI initialized with 4 MPI processes
     AMReX (19.01-75-g807b01a19821) initialized
-    Write_NCHEADER_time_1_2_0 = 0.00633597374  seconds.
-    Write_NCATT_time_1_3 = 0.0002799034119  seconds.
-    Write_NCINIT_time_1 = 0.04796266556  seconds.
-    Error at line 245 in WritePlotfilePnetCDF.cpp: Attribute value is inconsistent among processes.
-    Error at line 245 in WritePlotfilePnetCDF.cpp: Attribute value is inconsistent among processes.
-    Error at line 245 in WritePlotfilePnetCDF.cpp: Attribute value is inconsistent among processes.
-    Error at line 245 in WritePlotfilePnetCDF.cpp: Attribute value is inconsistent among processes.
-    Write_NCATT_time_2 = 0.0004410743713  seconds.
-    Write_NCATT_time_3 = 0.00026512146  seconds.
-    Write_NCVAR_time_4 = 0.009718418121  seconds.
-    Write_NCATT_time = 0.05839133263  seconds.
+    Write_NCHEADER_time_1_2_0 = 0.009748935699  seconds.
+    Write_NCATT_time_1_3 = 0.0004329681396  seconds.
+    Write_NCINIT_time_1 = 0.06093502045  seconds.
+    Write_NCATT_time_2 = 0.0003917217255  seconds.
+    Write_NCATT_time_3 = 0.0007684230804  seconds.
+    Write_NCVAR_time_4 = 0.009308576584  seconds.
+    Write_NCATT_time = 0.07141041756  seconds.
     ::---- calling NCPUT for the grid data on level 0
-    Write_NCATT_time_5 = 0.01653146744  seconds.
-    Write_NCVARPUT_time = 0.1496036053  seconds.
-    Write_NCVARPUT_time_since = 1547370031
-    Write_NC_time_7_closing = 1.907348633e-06  seconds.
-    Write_PNETCDF_time = 0.2281308174  seconds.
+    Write_NCATT_time_5 = 0.01284003258  seconds.
+    Write_NCVARPUT_time = 0.09048891068  seconds.
+    Write_NCVARPUT_time_since = 1547596225
+    Write_NC_time_7_closing = 2.145767212e-06  seconds.
+    Write_PNETCDF_time = 0.1815581322  seconds.
 
 
-    TinyProfiler total time across processes [min...avg...max]: 3.652 ... 3.66 ... 3.667
+    TinyProfiler total time across processes [min...avg...max]: 3.735 ... 3.747 ... 3.758
 
     ----------------------------------------------------------------------------------------------------
     Name                                                 NCalls  Excl. Min  Excl. Avg  Excl. Max   Max %
     ----------------------------------------------------------------------------------------------------
-    ParticleContainer<NSR, NSI, NAR, NAI>::InitRandom()       1      1.275      1.362      1.426  38.88%
-    ParticleContainer::RedistributeCPU()                      1     0.7592     0.8138     0.8899  24.27%
-    ParticleContainer::RedistributeMPI()                      1     0.3708     0.4228     0.4881  13.31%
-    RedistributeMPI_copy                                      1     0.2566     0.2756     0.2847   7.76%
-    ParticleContainer::WriteParticles()                       1     0.1609     0.1687     0.1802   4.91%
-    RD:convertFromNativeDoubleFormat                         16     0.1474     0.1489     0.1505   4.10%
-    NCVarPutGrids                                             1    0.03386     0.1143     0.1496   4.08%
-    NCVarPut                                                  1     0.0123    0.04763     0.1282   3.50%
-    PD_convert                                               64    0.08452    0.08575    0.08666   2.36%
-    ParticleContainer::Checkpoint()                           1    0.05702    0.06147    0.06845   1.87%
-    WriteMultiLevelPlotfilePNETCDF                            1    0.02543    0.04502    0.06639   1.81%
-    RedistributeMPI_locate                                    1     0.0404    0.04645    0.06028   1.64%
-    VisMF::Write(FabArray)                                    1    0.01487    0.01741    0.01852   0.51%
-    FabArray::setVal()                                        1     0.0118    0.01495    0.01751   0.48%
-    VisMF::WriteHeader                                        1      2e-06    0.00261    0.01044   0.28%
-    DistributionMapping::LeastUsedCPUs()                      1    6.8e-05   0.004072   0.008242   0.22%
-    WriteMultiLevelPlotfile()                                 1   0.002976   0.004116   0.007523   0.21%
-    VisMF::CalculateMinMax                                    1   0.002575   0.002852   0.003164   0.09%
-    WriteGenericPlotfileHeader()                              0          0   0.000125     0.0005   0.01%
-    FABio_binary::write_header                               48   0.000227  0.0003058    0.00048   0.01%
-    FABio::write_header                                      48   0.000113  0.0001495   0.000238   0.01%
-    VisMF::FindOffsets                                        1      4e-06    4.6e-05   0.000167   0.00%
-    DistributionMapping::SFCProcessorMapDoIt()                1    4.2e-05      6e-05    6.6e-05   0.00%
-    VisMF::Header                                             1      2e-06      4e-06      7e-06   0.00%
-    PC<NNNN>::Checkpoint:unlink                               0          0   1.25e-06      5e-06   0.00%
+    ParticleContainer<NSR, NSI, NAR, NAI>::InitRandom()       1      1.268      1.286      1.306  34.76%
+    ParticleContainer::RedistributeCPU()                      1     0.7699      0.872      0.949  25.25%
+    ParticleContainer::RedistributeMPI()                      1     0.3839     0.4785     0.5845  15.55%
+    RedistributeMPI_copy                                      1     0.2507     0.2969     0.3209   8.54%
+    RD:convertFromNativeDoubleFormat                         16     0.1662     0.1757     0.1923   5.12%
+    ParticleContainer::WriteParticles()                       1     0.1731     0.1794     0.1893   5.04%
+    PD_convert                                               64    0.09295    0.09433    0.09741   2.59%
+    NCVarPutGrids                                             1    0.04325    0.07374    0.09048   2.41%
+    WriteMultiLevelPlotfilePNETCDF                            1    0.03166     0.0519    0.07936   2.11%
+    ParticleContainer::Checkpoint()                           1    0.07165    0.07267    0.07439   1.98%
+    RedistributeMPI_locate                                    1    0.05693    0.06287    0.06847   1.82%
+    NCVarPut                                                  1    0.01209    0.02886    0.05941   1.58%
+    VisMF::Write(FabArray)                                    1    0.01751    0.01987    0.02081   0.55%
+    FabArray::setVal()                                        1    0.01203    0.01493    0.01788   0.48%
+    WriteMultiLevelPlotfile()                                 1   0.003566   0.006393    0.01486   0.40%
+    VisMF::WriteHeader                                        1      2e-06    0.00327    0.01308   0.35%
+    VisMF::CalculateMinMax                                    1   0.002674    0.00329   0.003667   0.10%
+    DistributionMapping::LeastUsedCPUs()                      1   0.000864  0.0008698   0.000876   0.02%
+    FABio_binary::write_header                               48   0.000205   0.000417   0.000661   0.02%
+    WriteGenericPlotfileHeader()                              0          0  0.0001555   0.000622   0.02%
+    VisMF::FindOffsets                                        1      5e-06   0.000149   0.000577   0.02%
+    DistributionMapping::SFCProcessorMapDoIt()                1   0.000301  0.0003447    0.00036   0.01%
+    FABio::write_header                                      48    9.9e-05  0.0001892   0.000359   0.01%
+    PC<NNNN>::Checkpoint:unlink                               0          0   1.75e-06      7e-06   0.00%
+    VisMF::Header                                             1      3e-06   3.75e-06      4e-06   0.00%
     ----------------------------------------------------------------------------------------------------
 
     ----------------------------------------------------------------------------------------------------
     Name                                                 NCalls  Incl. Min  Incl. Avg  Incl. Max   Max %
     ----------------------------------------------------------------------------------------------------
-    ParticleContainer<NSR, NSI, NAR, NAI>::InitRandom()       1      2.901       2.92      2.937  80.10%
-    ParticleContainer::RedistributeCPU()                      1      1.509      1.559      1.634  44.55%
-    ParticleContainer::RedistributeMPI()                      1      0.671     0.7448      0.833  22.72%
-    ParticleContainer::Checkpoint()                           1     0.4615     0.4648     0.4699  12.81%
-    ParticleContainer::WriteParticles()                       1     0.3934     0.4034     0.4129  11.26%
-    RedistributeMPI_copy                                      1     0.2566     0.2756     0.2847   7.76%
-    RD:convertFromNativeDoubleFormat                         16     0.2325     0.2347     0.2372   6.47%
-    WriteMultiLevelPlotfilePNETCDF                            1     0.1873      0.207     0.2283   6.23%
-    NCVarPut                                                  1     0.1619     0.1619     0.1621   4.42%
-    NCVarPutGrids                                             1    0.03386     0.1143     0.1496   4.08%
-    PD_convert                                               64    0.08452    0.08575    0.08666   2.36%
-    RedistributeMPI_locate                                    1     0.0404    0.04645    0.06028   1.64%
-    WriteMultiLevelPlotfile()                                 1    0.02447    0.02762    0.03679   1.00%
-    VisMF::Write(FabArray)                                    1    0.02149    0.02338    0.02877   0.78%
-    FabArray::setVal()                                        1     0.0118    0.01495    0.01751   0.48%
-    VisMF::WriteHeader                                        1      2e-06    0.00261    0.01044   0.28%
-    DistributionMapping::SFCProcessorMapDoIt()                1   0.000134   0.004132   0.008308   0.23%
-    DistributionMapping::LeastUsedCPUs()                      1    6.8e-05   0.004072   0.008242   0.22%
-    VisMF::CalculateMinMax                                    1   0.002575   0.002852   0.003164   0.09%
-    FABio_binary::write_header                               48   0.000341  0.0004553   0.000718   0.02%
-    VisMF::FindOffsets                                        1      4e-06  0.0001468    0.00057   0.02%
-    WriteGenericPlotfileHeader()                              0          0   0.000125     0.0005   0.01%
-    FABio::write_header                                      48   0.000113  0.0001495   0.000238   0.01%
-    VisMF::Header                                             1      2e-06      4e-06      7e-06   0.00%
-    PC<NNNN>::Checkpoint:unlink                               0          0   1.25e-06      5e-06   0.00%
+    ParticleContainer<NSR, NSI, NAR, NAI>::InitRandom()       1      2.971      2.996      3.019  80.34%
+    ParticleContainer::RedistributeCPU()                      1      1.679       1.71      1.742  46.34%
+    ParticleContainer::RedistributeMPI()                      1     0.7397     0.8383     0.9718  25.86%
+    ParticleContainer::Checkpoint()                           1     0.5157     0.5221     0.5308  14.12%
+    ParticleContainer::WriteParticles()                       1     0.4426     0.4494     0.4591  12.22%
+    RedistributeMPI_copy                                      1     0.2507     0.2969     0.3209   8.54%
+    RD:convertFromNativeDoubleFormat                         16     0.2636       0.27      0.286   7.61%
+    WriteMultiLevelPlotfilePNETCDF                            1     0.1342     0.1545     0.1819   4.84%
+    NCVarPut                                                  1     0.1026     0.1026     0.1027   2.73%
+    PD_convert                                               64    0.09295    0.09433    0.09741   2.59%
+    NCVarPutGrids                                             1    0.04325    0.07374    0.09048   2.41%
+    RedistributeMPI_locate                                    1    0.05693    0.06287    0.06847   1.82%
+    WriteMultiLevelPlotfile()                                 1    0.02785    0.03374    0.05034   1.34%
+    VisMF::Write(FabArray)                                    1    0.02429    0.02719    0.03487   0.93%
+    FabArray::setVal()                                        1    0.01203    0.01493    0.01788   0.48%
+    VisMF::WriteHeader                                        1      2e-06    0.00327    0.01308   0.35%
+    VisMF::CalculateMinMax                                    1   0.002674    0.00329   0.003667   0.10%
+    DistributionMapping::SFCProcessorMapDoIt()                1   0.001176   0.001215   0.001236   0.03%
+    VisMF::FindOffsets                                        1      5e-06  0.0003097    0.00122   0.03%
+    FABio_binary::write_header                               48   0.000304  0.0006063    0.00102   0.03%
+    DistributionMapping::LeastUsedCPUs()                      1   0.000864  0.0008698   0.000876   0.02%
+    WriteGenericPlotfileHeader()                              0          0  0.0001555   0.000622   0.02%
+    FABio::write_header                                      48    9.9e-05  0.0001892   0.000359   0.01%
+    PC<NNNN>::Checkpoint:unlink                               0          0   1.75e-06      7e-06   0.00%
+    VisMF::Header                                             1      3e-06   3.75e-06      4e-06   0.00%
     ----------------------------------------------------------------------------------------------------
 
     AMReX (19.01-75-g807b01a19821) finalized
+
 
   ```
 * Output files
@@ -184,27 +181,28 @@ the benchmark also reports time spent in individual steps.
               offsetdataspace_0 = 65 ;
               dataspace = 4194304 ;
       variables:
-              int __level_0_Processors(procdataspace_0) ;
-              int __level_0_boxes(boxdataspace_0, boxdataspace_1) ;
-              int64 __level_0_data:offsets=0(offsetdataspace_0) ;
-              double __level_0_data:datatype=0(dataspace) ;
+              int level_0.Processors(procdataspace_0) ;
+              int level_0.boxes(boxdataspace_0, boxdataspace_1) ;
+              int64 level_0.data:offsets=0(offsetdataspace_0) ;
+              double level_0.data:datatype=0(dataspace) ;
 
       // global attributes:
                       :Chombo_globalSpaceDim = 3 ;
                       :Chombo_globaltestReal = 0. ;
                       :Chombo_globaltestString = "vMString::testString" ;
-                      :_num_components = 2 ;
-                      :_num_levels = 1 ;
-                      :_component_0 = "component_0" ;
-                      :_component_1 = "component_1" ;
-                      :_filetype = "VanillaAMRFileType" ;
-                      :_testString = "vMString::testString" ;
-                      :__level_0_data_attributescomps = 2 ;
-                      :__level_0_dt = 0. ;
-                      :__level_0_dx = 0.0078125 ;
-                      :__level_0_time = 0. ;
-                      :__level_0_prob_domain = 0, 0, 0, 127, 127, 127 ;
-                      :__level_0_ref_ratio = 1 ;
+                      :num_components = 2 ;
+                      :num_levels = 1 ;
+                      :component_0 = "component_0" ;
+                      :component_1 = "component_1" ;
+                      :filetype = "VanillaAMRFileType" ;
+                      :testString = "vMString::testString" ;
+                      :level_0.data_attributes.comps = 2 ;
+                      :level_0.data_attributes.ghost = 0, 0, 0 ;
+                      :level_0.dt = 0. ;
+                      :level_0.dx = 0.0078125 ;
+                      :level_0.time = 0. ;
+                      :level_0.prob_domain = 0, 0, 0, 127, 127, 127 ;
+                      :level_0.ref_ratio = 1 ;
       }
     ```
   * Performance evaluation:
