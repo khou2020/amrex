@@ -20,14 +20,15 @@ Those non-NetCDF files are not measured by the benchmark program. We keep it to 
       * 1-dimensional 64 bit integer variable of size M recording the offset of the subdomain data in the data variable. 
       * 1-dimensional double variable that store the values in the grid. The size is equal to the size of grid tims number of components per cell. 
     * Beside variables, the benchmark program also add attributess to describe the file such as grid size.
-  * Implementation:
-    * The benchmark program is implementated using PnetCDF blocking vara APIs.
-    * In the plot file, the subgrids are flattened and serialized into a 1-dimensional array of bytes.
-    * Subgrid data are simply stacked one after another.
-    * Processes gather data from subgrid it is responsible for into a continuous buffer.
-    * Affter synchronizing the offset anbd size of each subgrid, processes write the data to the variable.
-    * The program uses ncmpi_put_vara_double to write the variable data either collectively or independently based on compile option.
-    * In addition to end to end timings and I/O bandwidths, the benchmark also reports time spent in individual steps. 
+
+* Implementation:
+  * The benchmark program is implementated using PnetCDF blocking vara APIs.
+  * In the plot file, the subgrids are flattened and serialized into a 1-dimensional array of bytes.
+  * Subgrid data are simply stacked one after another.
+  * Processes gather data from subgrid it is responsible for into a continuous buffer.
+  * Affter synchronizing the offset anbd size of each subgrid, processes write the data to the variable.
+  * The program uses ncmpi_put_vara_double to write the variable data either collectively or independently based on compile option.
+  * In addition to end to end timings and I/O bandwidths, the benchmark also reports time spent in individual steps. 
 
 * Building PnetCDF for AMRex benchmark:
   * The benchmark program does not use any advanced feature of PnetCDF, so the default build option will work
