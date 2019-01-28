@@ -1,30 +1,42 @@
-## Parallel I/O Kernel Case Study For AMRex
+## AMRex I/O kernel using PnetCDF
 
-This benchmark program is a case study of parallel I/O kernel from the
-[AMReX](https://github.com/AMReX-Codes/amrex) software framework library. The
-benchmark program, can be used to evaluate
-[PnetCDF](https://github.com/Parallel-NetCDF/PnetCDF) library for its
-performance on the I/O patterns used by AMReX plot file.
+This benchmark program is designed to evaluate [AMReX](https://github.com/AMReX-Codes/amrex) software framework library I/O performance when the I/O module is
+implemented using [PnetCDF](https://github.com/Parallel-NetCDF/PnetCDF) library.
 
 This benchmark follows the flow of the HDF5 benchmark. It wrties the same plot file data as the HDF5 benchmark except 
-that the file are in NetCDF instead of HDF5. Aside from the NetCDF plot file. The benchmark also output the plot file 
-in AMRex's original file format. It also write checkpoint files in raw AMRex format. Those non-NetCDF files are not measured 
-by the benchmark program. We keep it to maintain consistancy to the HDF5 benchmark.
+that the file are in NetCDF (https://www.unidata.ucar.edu/software/netcdf/) instead of HDF5. Aside from the NetCDF plot file. 
+The benchmark also output the plot file in AMRex's original file format. It also write checkpoint files in raw AMRex format. 
+Those non-NetCDF files are not measured by the benchmark program. We keep it to maintain consistancy to the HDF5 benchmark.
 
-The AMRex grid is a 3-dimensional array of size N * N * N where N is configurable via option. 
-It is divided into rectangular subdomain which is distributed among processes.
-To generate the plot file, the processes gather data from subdomain it is responsible for into a continuous buffer. 
-The data form each process is then stacked together to be stored in a single 1 dimensional variable by calling 
-ncmpi_put_vara_double either collectively or independently based on compile option.
+* I/O pattern:
+  * Data partition:
+    * The AMRex grid is a 3-dimensional array of size N * N * N where N is configurable via option. 
+    * It is divided into rectangular subdomain which is distributed among processes.
+    * The grid is divided into sub-grid, each one is handled by a process
+  * Data objects:
+    * The benchmark program writes 4 NetCDF variables. 
+      * 1-dimensional integer variable of size M recording the rank of process responsible to individual subdomain. 
+      * 2 dimensional variable of size m * 6 representing the bounding box of each subdomain. Each row represents 1 subdomain.
+      * 1-dimensional 64 bit integer variable of size M recording the offset of the subdomain data in the data variable. 
+      * 1-dimensional double variable that store the values in the grid. The size is equal to the size of grid tims number of components per cell. 
+    * Beside variables, the benchmark program also add attributess to describe the file such as grid size.
+  * Implementation:
+    * The benchmark program is implementated using PnetCDF blocking vara APIs.
+    * In the plot file, the subgrids are flattened and serialized into a 1-dimensional array of bytes.
+    * Subgrid data are simply stacked one after another.
+    * Processes gather data from subgrid it is responsible for into a continuous buffer.
+    * Affter synchronizing the offset anbd size of each subgrid, processes write the data to the variable.
+    * The program uses ncmpi_put_vara_double to write the variable data either collectively or independently based on compile option.
+    * In addition to end to end timings and I/O bandwidths, the benchmark also reports time spent in individual steps. 
 
-The benchmark program writes 4 NetCDF variables. The first one is a 1-dimensional integer variable of size M recording 
-the rank of process responsible to individual subdomain. The second one is a 2 dimensional variable of size m * 6 
-representing the bounding box of each subdomain. Each row represents 1 subdomain. The third variable is a 1-dimensional 
-64 bit integer variable of size M recording the offset of the subdomain data in the data variable. The fourth variable is 
-a one dimensional double variable that store the values in the grid. The size is equal to the size of grid tims number 
-of components per cell. Beside variables, the benchmark program also add attributess to describe the file such as grid size.
-The benchmark program is implementated using PnetCDF blocking vara APIs. In addition to end to end timings and I/O bandwidths, 
-the benchmark also reports time spent in individual steps. 
+* Building PnetCDF for AMRex benchmark:
+  * The benchmark program does not use any advanced feature of PnetCDF, so the default build option will work
+  * Download PnetCDF
+    git clone https://github.com/Parallel-NetCDF/PnetCDF.git
+  * Compile PnetCDF
+    ./configure --prefix=<install directory>
+    make install
+  * For details about building PnetCDF, please refer to https://github.com/Parallel-NetCDF/PnetCDF/blob/master/INSTALL
 
 * Compile command:
   * Edit `GNUmakefile` to customize the compiler, compile options, location of
