@@ -9,7 +9,7 @@ max_grid_size = 32
 nlevs = 1
 
 # Number of components in the multifabs
-ncomp = 6
+ncomp = 2
 
 # Number of particles per cell
 nppc = 2

@@ -1,0 +1,14 @@
+#!/bin/bash
+#SBATCH -q regular
+#SBATCH -N 32
+#SBATCH -C haswell
+#SBATCH -t 00:30:00
+#SBATCH -o amrex_32_%j.txt
+#SBATCH -e amrex_32_%j.err
+#SBATCH -L SCRATCH
+
+
+NN=${SLURM_NNODES}
+let NP=NN*32
+
+srun -n ${NP} ./amrex_bench inputs
