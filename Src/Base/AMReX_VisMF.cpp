@@ -6,6 +6,7 @@
 #include <vector>
 #include <deque>
 #include <cerrno>
+#include <algorithm>
 
 #include <AMReX_ccse-mpi.H>
 #include <AMReX_Utility.H>
@@ -902,6 +903,135 @@ VisMF::WriteHeader (const std::string &mf_name,
     return bytesWritten;
 }
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+long
+VisMF::WriteHeader_NC (int ncid,
+                       int varid,
+                       const std::string &mf_name,
+                       VisMF::Header     &hdr)
+{
+    int err;
+    int i;
+    int mhow;
+    int dimids[5], varids[6];
+    MPI_Offset start[2], count[2];
+    MPI_Offset putsize, putsize_old;
+    char name[1024];
+
+    BL_PROFILE("VisMF::WriteHeader");
+
+    ncmpi_inq_put_size(ncid, &putsize_old);
+
+    ncmpi_redef(ncid);
+
+    // Scalar att
+    ncmpi_put_att_int(ncid, varid, "m_var", NC_INT, 1, &(hdr.m_vers));
+    mhow = int(hdr.m_how);
+    ncmpi_put_att_int(ncid, varid, "m_how", NC_INT, 1, &(mhow));
+    ncmpi_put_att_int(ncid, varid, "m_ncomp", NC_INT, 1, &(hdr.m_ncomp));
+    ncmpi_put_att_int(ncid, varid, "m_ngrow", NC_INT, AMREX_SPACEDIM, hdr.m_ngrow.getVect());
+
+    // non-scalar att save in var
+    ncmpi_inq_vardimid(ncid, varid, dimids);
+    dimids[1] = dimids[AMREX_SPACEDIM + 1];
+
+    if(hdr.m_vers == VisMF::Header::Version_v1 || hdr.m_vers == VisMF::Header::NoFabHeaderMinMax_v1) {
+        sprintf(name, "%s_m_min", mf_name.c_str());
+#ifdef BL_USE_FLOAT
+        ncmpi_def_var(ncid, name, NC_FLOAT, 2, dimids, varids);
+#else
+        ncmpi_def_var(ncid, name, NC_DOUBLE, 2, dimids, varids);
+#endif
+        sprintf(name, "%s_m_max", mf_name.c_str());
+#ifdef BL_USE_FLOAT
+        ncmpi_def_var(ncid, name, NC_FLOAT, 2, dimids, varids + 1);
+#else
+        ncmpi_def_var(ncid, name, NC_DOUBLE, 2, dimids, varids + 1);
+#endif
+
+        ncmpi_put_att_int(ncid, varid, "m_min_varid", NC_INT, 1, varids);
+        ncmpi_put_att_int(ncid, varid, "m_max_varid", NC_INT, 1, varids + 1);
+    }
+
+    if(hdr.m_vers == VisMF::Header::NoFabHeaderFAMinMax_v1) {
+        sprintf(name, "%s_m_famin", mf_name.c_str());
+#ifdef BL_USE_FLOAT
+        ncmpi_def_var(ncid, name, NC_FLOAT, 1, dimids + 1, varids + 2);
+#else
+        ncmpi_def_var(ncid, name, NC_DOUBLE, 1, dimids + 1, varids + 2);
+#endif
+        sprintf(name, "%s_m_famax", mf_name.c_str());
+#ifdef BL_USE_FLOAT
+        ncmpi_def_var(ncid, name, NC_FLOAT, 1, dimids + 1, varids + 3);
+#else
+        ncmpi_def_var(ncid, name, NC_DOUBLE, 1, dimids + 1, varids + 3);
+#endif
+
+        ncmpi_put_att_int(ncid, varid, "m_famin_varid", NC_INT, 1, varids + 2);
+        ncmpi_put_att_int(ncid, varid, "m_famax_varid", NC_INT, 1, varids + 3);
+    }
+
+    err = ncmpi_inq_dimid(ncid, "AMREX_SPACEDIM", dimids + 1);
+    if (err != NC_NOERR){
+        ncmpi_def_dim(ncid, "AMREX_SPACEDIM", AMREX_SPACEDIM, dimids + 1);
+    }
+
+    sprintf(name, "%s_box_lo", mf_name.c_str());
+    ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 4);
+
+    sprintf(name, "%s_box_hi", mf_name.c_str());
+    ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 5);
+
+    ncmpi_put_att_int(ncid, varid, "box_lo_varid", NC_INT, 1, varids + 4);
+    ncmpi_put_att_int(ncid, varid, "box_lo_varid", NC_INT, 1, varids + 5);
+
+    ncmpi_enddef(ncid);
+    
+    if(hdr.m_vers == VisMF::Header::Version_v1 || hdr.m_vers == VisMF::Header::NoFabHeaderMinMax_v1) {
+        start[1] = 0;
+        count[0] = 1;
+        count[1] = hdr.m_ncomp;
+        for(i = 0; i < hdr.m_min.size(); i++){
+            start[0] = i;
+#ifdef BL_USE_FLOAT
+            ncmpi_iput_vara_float(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
+            ncmpi_iput_vara_float(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+#else
+            ncmpi_iput_vara_double(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
+            ncmpi_iput_vara_double(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+#endif
+        }
+    }
+
+    if(hdr.m_vers == VisMF::Header::NoFabHeaderFAMinMax_v1) {
+        start[0] = 0;
+        count[0] = hdr.m_ncomp;
+#ifdef BL_USE_FLOAT
+        ncmpi_iput_vara_float(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
+        ncmpi_iput_vara_float(ncid, varids[3], start, count, hdr.m_famax.data()void*), NULL);
+#else
+        ncmpi_iput_vara_double(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
+        ncmpi_iput_vara_double(ncid, varids[3], start, count, hdr.m_famax.data(), NULL);
+#endif
+    }
+
+    start[1] = 0;
+    count[0] = 1;
+    count[1] = AMREX_SPACEDIM;
+    for(i = 0; i < hdr.m_ba.size(); i++){
+        start[0] = i;
+        ncmpi_iput_vara_int(ncid, varids[4], start, count, ((const Box)(hdr.m_ba[i])).loVect(), NULL);
+        ncmpi_iput_vara_int(ncid, varids[5], start, count, ((const Box)(hdr.m_ba[i])).hiVect(), NULL);
+    }
+
+    ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+
+    ncmpi_inq_put_size(ncid, &putsize);
+
+    return (long)(putsize - putsize_old);
+}
+
+#endif
 
 long
 VisMF::Write (const FabArray<FArrayBox>&    mf,
@@ -1077,6 +1207,89 @@ VisMF::Write (const FabArray<FArrayBox>&    mf,
     return bytesWritten;
 }
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+long
+VisMF::Write_NC (int ncid,
+              const FabArray<FArrayBox>&    mf,
+              const std::string& mf_name,
+              bool               set_ghost)
+{
+    int err;
+    int i, j;
+    int dimids[5], varid;
+    int nFABs;
+    int coordinatorProc(ParallelDescriptor::IOProcessorNumber());
+    MPI_Offset putsize, putsize_old;
+    MPI_Offset start[5], count[5];
+    char name[1024];
+
+    BL_PROFILE("VisMF::Write(FabArray)");
+    BL_ASSERT(mf_name[mf_name.length() - 1] != '/');
+    BL_ASSERT(currentVersion != VisMF::Header::Undefined_v1);
+
+    ncmpi_inq_put_size(ncid, &putsize_old);
+
+    ncmpi_redef(ncid);
+
+    sprintf(name, "%s_fabs", mf_name.c_str());
+    ncmpi_def_dim(ncid, name, mf.boxArray().size(), dimids);
+    count[0] = 1;
+
+    const BoxArray& ba = mf.boxArray();
+    for(i = 0; i < AMREX_SPACEDIM; i++){
+        start[i + 1] = 0;
+        count[i + 1] = 0;
+        for(j = 0; j < ba.size(); j++){
+            count[i + 1] = (MPI_Offset)std::max((int)count[i + 1], ((const Box)(ba[j])).hiVect()[i] - ((const Box)(ba[j])).loVect()[i]);
+        }
+        sprintf(name, "%s_dim_%d", mf_name.c_str(), i);
+        ncmpi_def_dim(ncid, name, count[i + 1], dimids + i + 1);
+    }
+
+    sprintf(name, "%s_components", mf_name.c_str());
+    ncmpi_def_dim(ncid, name, mf.nComp(), dimids + AMREX_SPACEDIM + 1);
+    start[AMREX_SPACEDIM + 1] = 0;
+    count[AMREX_SPACEDIM + 1] = mf.nComp();
+
+#ifdef BL_USE_FLOAT
+    ncmpi_def_var(ncid, mf_name.c_str(), NC_FLOAT, AMREX_SPACEDIM + 2, dimids, &varid);
+#else
+    err = ncmpi_def_var(ncid, mf_name.c_str(), NC_DOUBLE, AMREX_SPACEDIM + 2, dimids, &varid);
+#endif
+
+    ncmpi_enddef(ncid);
+
+    // Count nreqs
+    for(MFIter mfi(mf); mfi.isValid(); ++mfi) {
+        ++nFABs;
+    }
+
+    // Posting nonblocking req
+    for(MFIter mfi(mf); mfi.isValid(); ++mfi) {
+        const FArrayBox &fab = mf[mfi];
+        start[0] = mfi.index();
+#ifdef BL_USE_FLOAT
+        ncmpi_iput_vara_float(ncid, varid, start, count, fab.dataPtr(), NULL);
+#else
+        ncmpi_iput_vara_double(ncid, varid, start, count, fab.dataPtr(), NULL);
+#endif
+    }
+
+    ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+
+    VisMF::Header hdr(mf, NFiles, currentVersion, false);
+    
+    if(currentVersion == VisMF::Header::Version_v1 || currentVersion == VisMF::Header::NoFabHeaderMinMax_v1) {
+        hdr.CalculateMinMax(mf, 0);
+    }
+
+    VisMF::WriteHeader_NC(ncid, varid, mf_name, hdr);
+
+    ncmpi_inq_put_size(ncid, &putsize);
+
+    return (long)(putsize - putsize_old);
+}
+#endif
 
 long
 VisMF::WriteOnlyHeader (const FabArray<FArrayBox> & mf,
