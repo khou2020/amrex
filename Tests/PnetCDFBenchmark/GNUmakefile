@@ -1,13 +1,16 @@
 AMREX_HOME ?= ../../
 
 DEBUG	= TRUE
-DEBUG	= FALSE
+#DEBUG	= FALSE
 
 DIM	= 3
 
 COMP    = gnu
 
 PRECISION = DOUBLE
+
+PNETCDF_HOME   = /home/khl7265/.local
+USE_PNETCDF = TRUE
 
 USE_MPI   = TRUE
 #USE_OMP   = TRUE
@@ -26,11 +29,3 @@ include $(AMREX_HOME)/Src/Base/Make.package
 include $(AMREX_HOME)/Src/Particle/Make.package
 
 include $(AMREX_HOME)/Tools/GNUMake/Make.rules
-
-PNETCDF_HOME   = /home/khl7265/.local
-USE_PNETCDF = TRUE
-ifeq ($(USE_PNETCDF), TRUE)
-DEFINES += -DBL_PNETCDF
-INCLUDE_LOCATIONS += $(PNETCDF_HOME)/include
-LIBRARIES         += -lpnetcdf -L$(PNETCDF_HOME)/lib
-endif

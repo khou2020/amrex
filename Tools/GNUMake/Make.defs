@@ -543,6 +543,13 @@ ifeq ($(USE_GPU),TRUE)
     endif
 endif
 
+ifeq ($(USE_PNETCDF), TRUE)
+    DEFINES += -DBL_USE_PNETCDF
+    INCLUDE_LOCATIONS += $(PNETCDF_HOME)/include
+    LIBRARY_LOCATIONS += $(PNETCDF_HOME)/lib
+    LIBRARIES         += -lpnetcdf 
+endif
+
 ifeq ($(USE_SINGLE_PRECISION_PARTICLES), TRUE)
   DEFINES += -DBL_SINGLE_PRECISION_PARTICLES -DAMREX_SINGLE_PRECISION_PARTICLES
   amrex_particle_real = float
