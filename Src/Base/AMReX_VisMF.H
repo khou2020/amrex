@@ -11,6 +11,10 @@
 #include <AMReX_FArrayBox.H>
 #include <AMReX_FabConv.H>
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+#include <pnetcdf.h>
+#endif
+
 namespace amrex {
 
 class NFilesIter;
@@ -178,6 +182,13 @@ public:
                        const std::string& name,
                        VisMF::How         how = NFiles,
                        bool               set_ghost = false);
+#ifdef BL_USE_PNETCDF
+    static long Write_NC (int ncid,
+                          const FabArray<FArrayBox> &fafab,
+                          const std::string& name,
+                          bool               set_ghost = false);
+#endif
+
     /**
     * \brief Write only the header-file corresponding to FabArray<FArrayBox> to
     * disk without the corresponding FAB data. This writes BoxArray information
@@ -284,6 +295,12 @@ private:
     static long WriteHeader (const std::string &fafab_name,
                              VisMF::Header     &hdr,
 			     int procToWrite = ParallelDescriptor::IOProcessorNumber());
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+    static long WriteHeader_NC (int ncid,
+                                int varid,
+                                const std::string &mf_name,
+                                VisMF::Header     &hdr);
+#endif
 
     //! fileNumbers must be passed in for dynamic set selection [proc]
     static void FindOffsets (const FabArray<FArrayBox> &fafab,

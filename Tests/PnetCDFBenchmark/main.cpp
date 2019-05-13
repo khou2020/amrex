@@ -3,7 +3,7 @@
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_Particles.H>
 
-#ifdef BL_PNETCDF
+#ifdef BL_USE_PNETCDF
 #include <WritePlotfilePnetCDF.H>
 #endif
 
@@ -123,7 +123,7 @@ int main(int argc, char* argv[])
         varnames.push_back("component_" + std::to_string(i));
     }
 
-#ifdef BL_PNETCDF   
+#ifdef BL_USE_PNETCDF   
     WriteMultiLevelPlotfilePNETCDF("plt00000", nlevs, amrex::GetVecOfConstPtrs(mf), 
                                 varnames, geom, time, dt, ref_ratio);
 #endif
