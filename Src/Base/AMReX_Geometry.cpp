@@ -49,21 +49,27 @@ operator>> (std::istream& is,
     return is;
 }
 
-Geometry::Geometry () {}
+Geometry::Geometry () noexcept {}
 
 Geometry::Geometry (const Box&     dom,
                     const RealBox* rb,
                     int            coord,
-                    int*           is_per)
+                    int const*     is_per) noexcept
 {
     define(dom,rb,coord,is_per);
+}
+
+Geometry::Geometry (const Box& dom, const RealBox& rb, int coord,
+                    Array<int,AMREX_SPACEDIM> const& is_per) noexcept
+{
+    define(dom, &rb, coord, is_per.data());
 }
 
 void
 Geometry::define (const Box&     dom,
                   const RealBox* rb,
                   int            coord,
-                  int*           is_per)
+                  int const*     is_per)
 {
     if (c_sys == undef)
         Setup(rb,coord,is_per);
@@ -102,7 +108,7 @@ Geometry::Finalize ()
 }
 
 void
-Geometry::Setup (const RealBox* rb, int coord, int* isper)
+Geometry::Setup (const RealBox* rb, int coord, int const* isper)
 {
 #ifdef _OPENMP
     BL_ASSERT(!omp_in_parallel());
@@ -176,8 +182,7 @@ Geometry::GetVolume (MultiFab&       vol) const
 #endif
     for (MFIter mfi(vol,TilingIfNotGPU()); mfi.isValid(); ++mfi)
     {
-        FArrayBox* fab = vol.fabPtr(mfi);
-	CoordSys::SetVolume(*fab, mfi.growntilebox());
+	CoordSys::SetVolume(vol[mfi], mfi.growntilebox());
     }
 }
 
@@ -204,8 +209,7 @@ Geometry::GetDLogA (MultiFab&       dloga,
 #endif
     for (MFIter mfi(dloga,TilingIfNotGPU()); mfi.isValid(); ++mfi)
     {
-        FArrayBox* fab = dloga.fabPtr(mfi);
-	CoordSys::SetDLogA(*fab, mfi.growntilebox(), dir);
+	CoordSys::SetDLogA(dloga[mfi], mfi.growntilebox(), dir);
     }
 }
 #endif
@@ -233,8 +237,7 @@ Geometry::GetFaceArea (MultiFab&       area,
 #endif
     for (MFIter mfi(area,TilingIfNotGPU()); mfi.isValid(); ++mfi)
     {
-        FArrayBox* fab = area.fabPtr(mfi);
-	CoordSys::SetFaceArea(*fab,mfi.growntilebox(),dir);
+	CoordSys::SetFaceArea(area[mfi],mfi.growntilebox(),dir);
     }
 }
 
@@ -251,7 +254,7 @@ Geometry::GetFaceArea (FArrayBox&      area,
 void
 Geometry::periodicShift (const Box&      target,
                          const Box&      src, 
-                         Vector<IntVect>& out) const
+                         Vector<IntVect>& out) const noexcept
 {
     out.resize(0);
 
@@ -327,7 +330,7 @@ Geometry::periodicShift (const Box&      target,
 }
 
 Box
-Geometry::growNonPeriodicDomain (int ngrow) const
+Geometry::growNonPeriodicDomain (int ngrow) const noexcept
 {
     Box b = Domain();
     for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
@@ -339,7 +342,7 @@ Geometry::growNonPeriodicDomain (int ngrow) const
 }
 
 Box
-Geometry::growPeriodicDomain (int ngrow) const
+Geometry::growPeriodicDomain (int ngrow) const noexcept
 {
     Box b = Domain();
     for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {

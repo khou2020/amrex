@@ -26,7 +26,7 @@ class AmrCore
 public:
 
     AmrCore ();
-    AmrCore (const RealBox* rb, int max_level_in, const Vector<int>& n_cell_in, int coord=-1);
+    AmrCore (const RealBox* rb, int max_level_in, const Vector<int>& n_cell_in, int coord=-1, Vector<IntVect> ref_ratios = Vector<IntVect>());
 
     AmrCore (const AmrCore& rhs) = delete;
     AmrCore& operator= (const AmrCore& rhs) = delete;
@@ -34,7 +34,7 @@ public:
     virtual ~AmrCore ();
 
 #ifdef AMREX_PARTICLES
-    AmrParGDB* GetParGDB () const { return m_gdb.get(); }
+    AmrParGDB* GetParGDB () const noexcept { return m_gdb.get(); }
 #endif
 
     /**
@@ -51,9 +51,9 @@ public:
     static void Initialize ();
     static void Finalize ();
 
-    void printGridSummary (std::ostream& os, int min_lev, int max_lev) const;
+    void printGridSummary (std::ostream& os, int min_lev, int max_lev) const noexcept;
 
-    int Verbose () const { return verbose; }
+    int Verbose () const noexcept { return verbose; }
 
 protected:
 

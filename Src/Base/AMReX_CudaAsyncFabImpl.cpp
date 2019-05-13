@@ -14,6 +14,42 @@
 namespace amrex {
 namespace Cuda {
 
+#ifdef AMREX_FAB_IS_PINNED
+
+void AsyncFabImpl::Initialize () {}
+void AsyncFabImpl::Finalize () {}
+
+AsyncFabImpl::AsyncFabImpl () : m_gpu_fab(new FArrayBox()) {}
+
+AsyncFabImpl::AsyncFabImpl (Box const& bx, int ncomp) : m_gpu_fab(new FArrayBox(bx,ncomp)) {}
+
+AsyncFabImpl::AsyncFabImpl (FArrayBox& a_fab)
+    : m_gpu_fab(a_fab.isAllocated()
+                ? new FArrayBox(a_fab.box(), a_fab.nComp())
+                : new FArrayBox())
+{}
+
+AsyncFabImpl::AsyncFabImpl (FArrayBox& /*a_fab*/, Box const& bx, int ncomp)
+    : AsyncFabImpl(bx,ncomp)
+{}
+
+AsyncFabImpl::~AsyncFabImpl () {}
+
+FArrayBox*
+AsyncFabImpl::fabPtr () noexcept
+{
+    AMREX_ASSERT(m_gpu_fab != nullptr);
+    return m_gpu_fab.get();
+}
+
+FArrayBox& AsyncFabImpl::hostFab () noexcept { return *m_gpu_fab; }
+
+#else
+
+//
+// Fab is Managed
+//
+
 namespace {
     bool initialized = false;
 
@@ -118,10 +154,16 @@ AsyncFabImpl::~AsyncFabImpl ()
 }
 
 FArrayBox*
-AsyncFabImpl::fabPtr ()
+AsyncFabImpl::fabPtr () noexcept
 {
     AMREX_ASSERT(m_gpu_fab != nullptr);
     return m_gpu_fab.get();
+}
+
+FArrayBox&
+AsyncFabImpl::hostFab () noexcept
+{
+    return m_cpu_fab;
 }
 
 void
@@ -139,8 +181,11 @@ AsyncFabImpl::copy_htod ()
     {
         auto src  = static_cast<BaseFabData<Real>*>(&m_cpu_fab);
         std::memcpy(dest, src, sizeof(BaseFabData<Real>));
+        dest->setOwner(false);
     }
 }
+
+#endif
 
 }
 }
@@ -168,7 +213,9 @@ AsyncFabImpl::AsyncFabImpl (FArrayBox& a_fab, Box const& bx, int ncomp)
 
 AsyncFabImpl::~AsyncFabImpl () {}
 
-FArrayBox* AsyncFabImpl::fabPtr () { return m_cpu_fab_alias; }
+FArrayBox* AsyncFabImpl::fabPtr () noexcept { return m_cpu_fab_alias; }
+
+FArrayBox& AsyncFabImpl::hostFab () noexcept { return *m_cpu_fab_alias; }
 
 }}
 

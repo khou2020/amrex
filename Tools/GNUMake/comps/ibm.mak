@@ -50,8 +50,8 @@ ifeq ($(DEBUG),TRUE)
 
 else
 
-  CXXFLAGS += -g -O2 -qsimd=auto
-  CFLAGS   += -g -O2 -qsimd=auto
+  CXXFLAGS += -g -O2 -qsimd=auto -qmaxmem=-1
+  CFLAGS   += -g -O2 -qsimd=auto -qmaxmem=-1
 
 endif
 
@@ -59,6 +59,11 @@ endif
 
 CXXFLAGS += -std=c++1y
 CFLAGS   += -std=gnu99
+
+########################################################################
+
+CXXFLAGS += -Wunknown-pragmas
+CFLAGS   += -Wunknown-pragmas
 
 ########################################################################
 
@@ -106,8 +111,7 @@ F90FLAGS += -WF,-C!
 
 FFLAGS   += -qfixed=72
 
-F90FLAGS += -qmoddir=$(fmoddir) -I $(fmoddir)
-FFLAGS   += -qmoddir=$(fmoddir) -I $(fmoddir)
+FMODULES = -qmoddir=$(fmoddir) -I $(fmoddir)
 
 FFLAGS   += $(GENERIC_IBM_FLAGS)
 F90FLAGS += $(GENERIC_IBM_FLAGS)
@@ -127,8 +131,8 @@ endif
 FORTLINK = LOWERCASE
 
 ifeq ($(USE_CUDA),TRUE)
-  F90FLAGS += -qcuda
-  FFLAGS += -qcuda
+  F90FLAGS += -qcuda -qtgtarch=sm_$(CUDA_ARCH)
+  FFLAGS += -qcuda -qtgtarch=sm_$(CUDA_ARCH)
 
   ifdef CUDA_MAXREGCOUNT
     F90FLAGS += -Xptxas -maxrregcount=$(CUDA_MAXREGCOUNT)

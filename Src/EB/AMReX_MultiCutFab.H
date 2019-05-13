@@ -16,8 +16,8 @@ public:
         : FArrayBox(b, ncomps, alloc, shared) {}
 
 #ifdef AMREX_USE_GPU
-    CutFab (CutFab const& rhs, MakeType make_type)
-        : FArrayBox(rhs, make_type) {}
+    CutFab (CutFab const& rhs, MakeType make_type, int scomp, int ncomp)
+        : FArrayBox(rhs, make_type, scomp, ncomp) {}
 #endif
 
     ~CutFab () = default;
@@ -37,7 +37,14 @@ public:
     std::size_t copyFromMem (const Box&  dstbox,
                              int         dstcomp,
                              int         numcomp,
-                             const void* src);
+                             const void* src)
+    {
+        if (dptr != nullptr) {
+            return FArrayBox::copyFromMem(dstbox, dstcomp, numcomp, src);
+        } else {
+            return sizeof(CutFab::value_type)*static_cast<std::size_t>(dstbox.numPts()*numcomp);
+        }
+    }
 
     AMREX_GPU_HOST_DEVICE
     CutFab& copy (const CutFab & src,
@@ -45,7 +52,22 @@ public:
                   int            srccomp,
                   const Box&     destbox,
                   int            destcomp,
-                  int            numcomp);
+                  int            numcomp)
+    {
+        if (dptr != nullptr) {
+            FArrayBox::copy(src,srcbox,srccomp,destbox,destcomp,numcomp);
+        }
+        return *this;
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    CutFab& copy (const CutFab & src, const Box& bx, SrcComp scomp, DestComp dcomp, NumComps ncomp)
+    {
+        if (dptr != nullptr) {
+            FArrayBox::copy(src, bx, scomp, dcomp, ncomp);
+        }
+        return *this;
+    }
 };
 
 class MultiCutFab
@@ -68,20 +90,26 @@ public:
     void define (const BoxArray& ba, const DistributionMapping& dm,
                  int ncomp, int ngrow, const FabArray<EBCellFlagFab>& cellflags);
 
-    const CutFab& operator[] (const MFIter& mfi) const;
-    CutFab& operator[] (const MFIter& mfi);
+    const CutFab& operator[] (const MFIter& mfi) const noexcept;
+    CutFab& operator[] (const MFIter& mfi) noexcept;
 
-    bool ok (const MFIter& mfi) const;
+    CutFab      * fabPtr (const MFIter& mfi) noexcept;
+    CutFab const* fabPtr (const MFIter& mfi) const noexcept;
+
+    Array4<Real      > array (const MFIter& mfi) noexcept;
+    Array4<Real const> array (const MFIter& mfi) const noexcept;
+
+    bool ok (const MFIter& mfi) const noexcept;
 
     void setVal (Real val);
 
-    FabArray<CutFab>& data () { return m_data; }
-    const FabArray<CutFab>& data () const { return m_data; }
+    FabArray<CutFab>& data () noexcept { return m_data; }
+    const FabArray<CutFab>& data () const noexcept { return m_data; }
 
-    const BoxArray& boxArray () const { return m_data.boxArray(); }
-    const DistributionMapping& DistributionMap () const { return m_data.DistributionMap(); }
-    int nComp () const { return m_data.nComp(); }
-    int nGrow () const { return m_data.nGrow(); }
+    const BoxArray& boxArray () const noexcept { return m_data.boxArray(); }
+    const DistributionMapping& DistributionMap () const noexcept { return m_data.DistributionMap(); }
+    int nComp () const noexcept { return m_data.nComp(); }
+    int nGrow () const noexcept { return m_data.nGrow(); }
 
     void ParallelCopy (const MultiCutFab& src, int scomp, int dcomp, int ncomp, int sng, int dng,
                        const Periodicity& period = Periodicity::NonPeriodic());

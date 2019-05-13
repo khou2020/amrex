@@ -40,8 +40,8 @@ AmrCore::AmrCore ()
     InitAmrCore();
 }
 
-AmrCore::AmrCore (const RealBox* rb, int max_level_in, const Vector<int>& n_cell_in, int coord)
-    : AmrMesh(rb, max_level_in, n_cell_in, coord)
+AmrCore::AmrCore (const RealBox* rb, int max_level_in, const Vector<int>& n_cell_in, int coord, Vector<IntVect> ref_ratios)
+  : AmrMesh(rb, max_level_in, n_cell_in, coord, std::move(ref_ratios))
 {
     Initialize();
     InitAmrCore();
@@ -111,7 +111,7 @@ AmrCore::regrid (int lbase, Real time, bool)
 
 
 void
-AmrCore::printGridSummary (std::ostream& os, int min_lev, int max_lev) const
+AmrCore::printGridSummary (std::ostream& os, int min_lev, int max_lev) const noexcept
 {
     for (int lev = min_lev; lev <= max_lev; lev++)
     {

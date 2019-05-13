@@ -69,6 +69,9 @@ alternatively, in tcsh one can set
 
     setenv AMREX_HOME /path/to/amrex
 
+Note: when setting ``AMREX_HOME`` in the ``GNUmakefile``, be aware that ``~`` does
+not expand, so ``AMREX_HOME=~/amrex/`` will yield an error. 
+
 One must set the ``COMP`` variable to choose a compiler. Currently the list of
 supported compilers includes gnu, cray, ibm, intel, llvm, and pgi. One must
 also set the ``DIM`` variable to either 1, 2, or 3, depending on the dimensionality
@@ -158,6 +161,23 @@ also have an ``amrex/Tools/GNUMake/Make.local`` file to override various
 variables. See ``amrex/Tools/GNUMake/Make.local.template`` for more examples of
 how to customize the build process.
 
+If you need to pass macro definitions to the preprocessor, you can add
+them to your make file as follows,
+
+::
+
+        DEFINES += -Dmyname1 -Dmyname2=mydefinition
+
+To link to an additional library say ``foo`` with headers located at
+``foopath/include`` and library at ``foopath/lib``, you can add the
+following to your make file before the line that includes AMReX's
+``Make.defs``,
+
+::
+
+        INCLUDE_LOCATIONS += foopath/include
+        LIBRARY_LOCATIONS += foopath/lib
+        LIBRARIES += -lfoo
 
 .. _sec:build:local:
 
@@ -165,13 +185,13 @@ Specifying your own compiler
 ----------------------------
 
 The ``amrex/Tools/GNUMake/Make.local`` file can also specify your own compile
-commands by setting the valiables ``CXX``, ``CC``, ``FC``, and ``F90``. This
-might be neccarry if your systems contains non-standard names for compiler
+commands by setting the variables ``CXX``, ``CC``, ``FC``, and ``F90``. This
+might be necessary if your systems contains non-standard names for compiler
 commands.
 
 For example, the following ``amrex/Tools/GNUMake/Make.local`` builds AMReX
 using a specific compiler (in this case ``gcc-8``) without MPI. Whenever
-``USE_MPI``  is true, this confguration defaults to the appropriate
+``USE_MPI``  is true, this configuration defaults to the appropriate
 ``mpixxx`` command:
 ::
 
@@ -197,7 +217,7 @@ GCC on macOS
 ------------
 
 The example configuration above should also run on the latest macOS. On macOS
-the default cxx compiler is clang, whereas the default fortran compiler is
+the default cxx compiler is clang, whereas the default Fortran compiler is
 gfortran. Sometimes it is good to avoid mixing compilers, in that case we can
 use the ``Make.local`` to force using GCC. However, macOS' Xcode ships with its
 own (woefully outdated) version of GCC (4.2.1). It is therefore recommended to
@@ -220,7 +240,7 @@ The additional ``INCLUDE_LOCATIONS`` are installed using homebrew also. Note
 that if you are building AMReX using homebrew's gcc, it is recommended that you
 use homebrew's mpich. Normally is it fine to simply install its binaries:
 ``brew install mpich``. But if you are experiencing problems, we suggest
-building mpich usinging homebrew's gcc: ``brew install mpich --cc=gcc-8``.
+building mpich using homebrew's gcc: ``brew install mpich --cc=gcc-8``.
 
 
 .. _sec:build:lib:
@@ -229,14 +249,44 @@ Building libamrex
 =================
 
 If an application code already has its own elaborated build system and wants to
-use AMReX an external library, this might be your choice. In this approach, one
+use AMReX, an external AMReX library can be created instead. In this approach, one
 runs ``./configure``, followed by ``make`` and ``make install``.
 Other make options include ``make distclean`` and ``make uninstall``.  In the top
 AMReX directory, one can run ``./configure -h`` to show the various options for
-the configure script. This approach is built on the AMReX GNU Make system. Thus
+the configure script. In particular, one can specify the installation path for the AMReX library using::
+
+  ./configure --prefix=[AMReX library path]
+
+This approach is built on the AMReX GNU Make system. Thus
 the section on :ref:`sec:build:make` is recommended if any fine tuning is
 needed.  The result of ``./configure`` is ``GNUmakefile`` in the AMReX
 top directory.  One can modify the make file for fine tuning.
+
+To compile an application code against the external AMReX library, it
+is necessary to set appropriate compiler flags and set the library
+paths for linking. To assist with this, when the AMReX library is
+built, a configuration file is created in ``[AMReX library path]/lib/pkgconfig/amrex.pc``.
+This file contains the Fortran and
+C++ flags used to compile the AMReX library as well as the appropriate
+library and include entries.
+
+The following sample GNU Makefile will compile a ``main.cpp`` source
+file against an external AMReX library, using the C++ flags and
+library paths used to build AMReX::
+
+  AMREX_LIBRARY_HOME ?= [AMReX library path]
+
+  LIBDIR := $(AMREX_LIBRARY_HOME)/lib
+  INCDIR := $(AMREX_LIBRARY_HOME)/include
+
+  COMPILE_CPP_FLAGS ?= $(shell awk '/Cflags:/ {$$1=$$2=""; print $$0}' $(LIBDIR)/pkgconfig/amrex.pc)
+  COMPILE_LIB_FLAGS ?= $(shell awk '/Libs:/ {$$1=$$2=""; print $$0}' $(LIBDIR)/pkgconfig/amrex.pc)
+
+  CFLAGS := -I$(INCDIR) $(COMPILE_CPP_FLAGS)
+  LFLAGS := -L$(LIBDIR) $(COMPILE_LIB_FLAGS)
+
+  all:
+          g++ -o main.exe main.cpp $(CFLAGS) $(LFLAGS)
 
 .. _sec:build:cmake:
 
@@ -249,9 +299,9 @@ CMake build is a two-step process. First ``cmake`` is invoked to create
 configuration files and makefiles in a chosen directory (``builddir``).  This
 is roughly equivalent to running ``./configure`` (see the section on
 :ref:`sec:build:lib`). Next, the actual build and installation are performed by
-invoking ``make install`` from within builddir. This installs the library files
+invoking ``make install`` from within ``builddir``. This installs the library files
 in a chosen installation directory (``installdir``).  If no installation path
-is provided by the user, AMReX will be installed in /path/to/amrex/installdir.
+is provided by the user, AMReX will be installed in ``/path/to/amrex/installdir``.
 The CMake build process is summarized as follows:
 
 .. highlight:: console
@@ -260,12 +310,13 @@ The CMake build process is summarized as follows:
 
     mkdir /path/to/builddir
     cd    /path/to/builddir
-    cmake [options] -DCMAKE_INSTALL_PREFIX:PATH=/path/to/installdir  /path/to/amrex
+    cmake [options] -DCMAKE_BUILD_TYPE=[Debug|Release|RelWithDebInfo|MinSizeRel] -DCMAKE_INSTALL_PREFIX=/path/to/installdir  /path/to/amrex
     make  install
 
 In the above snippet, ``[options]`` indicates one or more options for the
 customization of the build, as described in the subsection on
-:ref:`sec:build:cmake:options`.  Although the AMReX source could be used as
+:ref:`sec:build:cmake:options`. If the option ``CMAKE_BUILD_TYPE`` is omitted,
+``CMAKE_BUILD_TYPE=Release`` is assumed. Although the AMReX source could be used as
 build directory, we advise against doing so.  After the installation is
 complete, builddir can be removed.
 
@@ -288,15 +339,22 @@ we recommend telling cmake to use gcc for c/c++ also.
 Customization options
 ---------------------
 
-AMReX configuration settings may be specified on the command line with the
-``-D`` option.  For example, one can enable OpenMP support as follows:
+AMReX build can be customized  by setting the value of suitable configuration variables
+on the command line via the ``-D <var>=<value>`` syntax, where ``<var>`` is the
+variable to set and ``<value>`` its desired value.
+For example, one can enable OpenMP support as follows:
 
 .. highlight:: console
 
 ::
 
-    cmake -DENABLE_OMP=1 -DCMAKE_INSTALL_PREFIX:PATH=/path/to/installdir  /path/to/amrex
+    cmake -DENABLE_OMP=YES -DCMAKE_INSTALL_PREFIX=/path/to/installdir  /path/to/amrex
 
+In the example above ``<var>=ENABLE_OMP`` and ``<value>=ON``.
+Configuration variables requiring a boolen value are evaluated to true if they
+are assigned a value of ``1``, ``ON``, ``YES``, ``TRUE``, ``Y``. Conversely they are evaluated to false
+if they are assigned a value of ``0``, ``OFF``, ``NO``, ``FALSE``, ``N``.
+Boolean configuration variables are case-insensitive.
 The list of available option is reported in the table on :ref:`tab:cmakevar`
 below.
 
@@ -310,82 +368,92 @@ below.
 .. table:: AMReX build options
 
    +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | Option Name                  | Description                                     | Default     | Possible values |
+   | Variable Name                | Description                                     | Default     | Possible values |
    +==============================+=================================================+=============+=================+
-   | DEBUG                        |  Build AMReX in debug mode                      | OFF         | ONE, OFF        |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | DIM                          |  Dimension of AMReX build                       | 3           | 2, 3            |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_DP                    |  Build with double-precision reals              | ON          | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_PIC                   |  Build Position Independent Code                | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_MPI                   |  Build with MPI support                         | ON          | ON OFF          |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_OMP                   |  Build with OpenMP support                      | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_FORTRAN_INTERFACES    |  Build Fortran API                              | ON          | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_LINEAR_SOLVERS        |  Build AMReX linear solvers                     | ON          | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_LINEAR_SOLVERS_LEGACY |  Build AMReX linear solvers (legacy components) | ON          | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_FBASELIB              |  Build (deprecated) Fortran kernel              | ON          | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_AMRDATA               |  Build data services                            | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_PARTICLES             |  Build particle classes                         | OFF         | ON OFF          |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_DP_PARTICLES          |  Use double-precision reals in particle classes | ON          | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_BASE_PROFILE          |  Build with basic profiling support             | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_TINY_PROFILE          |  Build with tiny profiling support              | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_TRACE_PROFILE         |  Build with trace-profiling support             | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_COMM_PROFILE          |  Build with comm-profiling support              | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_MEM_PROFILE           |  Build with memory-profiling support            | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_PROFPARSER            |  Build with profile parser support              | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_BACKTRACE             |  Build with backtrace support                   | OFF         | ON, OFF         |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_FPE                   |  Build with Floating Point Exceptions checks    | OFF         | ON,OFF          |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_ASSERTIONS            |  Build with assertions turned on                | OFF         | ON,OFF          |
-   +------------------------------+-------------------------------------------------+-------------+-----------------+
    | CMAKE_Fortran_FLAGS          |  User-defined Fortran flags                     |             | user-defined    |
    +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | CMAKE_CXX_FLAGS              |  User-defined C++ flags                         |             | user-defined    |
+   | CMAKE_CXX_FLAGS              |  User-defined C++ flags                         |             | user-defined    |   
    +------------------------------+-------------------------------------------------+-------------+-----------------+
-   | ENABLE_3D_NODAL_MGML         |  Enable 3D nodal projection                     | OFF         | ON,OFF          |
+   | DIM                          |  Dimension of AMReX build                       | 3           | 1, 2, 3         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | USE_XSDK_DEFAULTS            |  Use XSDK defaults settings                     | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+   
+   | ENABLE_DP                    |  Build with double-precision reals              | YES         | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_PIC                   |  Build Position Independent Code                | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_MPI                   |  Build with MPI support                         | YES         | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_OMP                   |  Build with OpenMP support                      | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_CUDA                  |  Build with CUDA support                        | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | CUDA_ARCH                    |  CUDA target architecture                       | Auto        | User-defined    |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | CUDA_MAX_THREADS             |  Max number of CUDA threads per block           | 256         | User-defined    |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | CUDA_MAXREGCOUNT             |  Limits the number of CUDA registers available  | 255         | User-defined    |   
+   +------------------------------+-------------------------------------------------+-------------+-----------------+   
+   | ENABLE_CUDA_FASTMATH         |  Enable CUDA fastmath library                   | YES         | YES, NO         |    
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_FORTRAN_INTERFACES    |  Build Fortran API                              | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_LINEAR_SOLVERS        |  Build AMReX linear solvers                     | YES         | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_AMRDATA               |  Build data services                            | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_PARTICLES             |  Build particle classes                         | NO          | YES NO          |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_DP_PARTICLES          |  Use double-precision reals in particle classes | YES         | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_BASE_PROFILE          |  Build with basic profiling support             | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_TINY_PROFILE          |  Build with tiny profiling support              | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_TRACE_PROFILE         |  Build with trace-profiling support             | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_COMM_PROFILE          |  Build with comm-profiling support              | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_MEM_PROFILE           |  Build with memory-profiling support            | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_PROFPARSER            |  Build with profile parser support              | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_BACKTRACE             |  Build with backtrace support                   | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_FPE                   |  Build with Floating Point Exceptions checks    | NO          | YES,NO          |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_ASSERTIONS            |  Build with assertions turned on                | NO          | YES,NO          |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_3D_NODAL_MGML         |  Enable 3D nodal projection                     | NO          | YES,NO          |
    +------------------------------+-------------------------------------------------+-------------+-----------------+
    | ALGOIM_INSTALL_DIR           |  Path to Algoim installation directory          |             | user-defined    |
    +------------------------------+-------------------------------------------------+-------------+-----------------+
    | BLITZ_INSTALL_DIR            |  Path to Blitz installation directory           |             | user-defined    |
    +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_SUNDIALS              |  Enable SUNDIALS 4 interfaces                   | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_SENSEI_IN_SITU        |  Enable SENSEI_IN_SITU infrastucture            | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_CONDUIT               |  Enable Conduit support                         | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_ASCENT                |  Enable Ascent support                          | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+
+   | ENABLE_HYPRE                 |  Enable HYPRE interfaces                        | NO          | YES, NO         |
+   +------------------------------+-------------------------------------------------+-------------+-----------------+  
 .. raw:: latex
 
    \end{center}
 
-The option ``ENABLE_LINEAR_SOLVERS=ON`` triggers the inclusion of C++-based
-linear solvers in the build. Fortran-based linear solvers can be included as
-well by providing the option ``ENABLE_FBASELIB=ON`` in addition to
-``ENABLE_LINEAR_SOLVERS=ON``.
-
-The option ``DEBUG=ON`` implies ``ENABLE_ASSERTION=ON``. In order to turn off
-assertions in debug mode, ``ENABLE_ASSERTION=OFF`` must be set explicitly while
+The option ``CMAKE_BUILD_TYPE=Debug`` implies ``ENABLE_ASSERTION=YES``. In order to turn off
+assertions in debug mode, ``ENABLE_ASSERTION=NO`` must be set explicitly while
 invoking CMake.
 
 The options ``CMAKE_Fortran_FLAGS`` and ``CMAKE_CXX_FLAGS`` allow the user to
 set his own compilation flags for Fortran and C++ source files respectively.
 If ``CMAKE_Fortran_FLAGS``/ ``CMAKE_CXX_FLAGS`` are not set by the user,
 they will be initialized with the value of the environmental variables ``FFLAGS``/
-``CXXFLAGS``. If ``FFLAGS``/ ``CXXFLAGS`` are not defined in the environment,
-``CMAKE_Fortran_FLAGS``/ ``CMAKE_CXX_FLAGS`` will be set to the AMReX default values
-defined in  ``/path/to/amrex/Tools/CMake/AMReX_Compilers.cmake``.
+``CXXFLAGS``. If neither ``FFLAGS``/ ``CXXFLAGS`` nor ``CMAKE_Fortran_FLAGS``/ ``CMAKE_CXX_FLAGS``
+are defined, AMReX default flags are used.
 
 The option ``ENABLE_3D_NODAL_MGML`` enables AMReX 3D nodal projection. This option requires
 two external libraries: Blitz and Algoim. The user can provide the location of
@@ -393,6 +461,7 @@ both libraries via ``BLITZ_INSTALL_DIR`` and ``ALGOIM_INSTALL_DIR``. However, if
 options is not provided, AMReX will download and build Blitz and/or Algoim automatically.
 It should be noted that AMReX 2D nodal projection does not require the use of external libraries.
 
+For a detailed explanation of CUDA support in CMake, refer to section :ref:`sec:gpu:build`.
 
 .. _sec:build:cmake:config:
 
@@ -406,11 +475,16 @@ to include the following line in the appropriate CMakeLists.txt file:
 
 ::
 
-    find_package (AMReX 18 [REQUIRED] [HINTS /path/to/installdir/] )
+    find_package(AMReX 18 [REQUIRED])
 
-
-In the above snippet, ``18`` refer to the mininum AMReX version supporting
-the import feature discussed here.
+    
+To specify a search path for the AMReX library, set the environmental variable
+``AMReX_ROOT`` to point to the AMReX installation directory or add
+``-DAMReX_ROOT=<path/to/amrex/installation/directory>`` to the ``cmake`` invocation for your 
+project. More details on how CMake search for external packages can be find 
+`here <https://cmake.org/cmake/help/v3.14/command/find_package.html>`_.
+In the above snippet, ``18`` refer to the minimum AMReX version supporting
+the import feature discussed here. 
 Linking AMReX to any target defined in your CMake project is done by including
 the following line in the appropriate CMakeLists.txt file
 
@@ -418,7 +492,7 @@ the following line in the appropriate CMakeLists.txt file
 
 ::
 
-    target_link_libraries ( <your-target-name>  AMReX::amrex )
+    target_link_libraries( <your-target-name>  AMReX::amrex )
 
 The above snippet will take care of properly linking ``<your-target-name>``
 to AMReX and to all the required transitive dependencies.

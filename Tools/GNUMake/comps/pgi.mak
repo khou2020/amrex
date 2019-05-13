@@ -28,10 +28,19 @@ ifeq ($(USE_OMP),TRUE)
 endif
 
 ifeq ($(USE_ACC),TRUE)
-  GENERIC_PGI_FLAGS += -acc -ta=tesla:cc$(CUDA_ARCH) -Minfo=accel -mcmodel=medium
+  GENERIC_PGI_FLAGS += -acc -Minfo=accel -mcmodel=medium
+  ifneq ($(CUDA_ARCH),)
+    GENERIC_PGI_FLAGS += -ta=tesla:cc$(CUDA_ARCH)
+  else
+    GENERIC_PGI_FLAGS += -ta=tesla
+  endif
 else
   GENERIC_PGI_FLAGS += -noacc
 endif
+
+# Note that -O2 is the default optimization level for PGI
+
+PGI_OPT := -O2 -fast
 
 ########################################################################
 ########################################################################
@@ -46,10 +55,6 @@ CC  = pgcc
 
 CXXFLAGS =
 CFLAGS   =
-
-# Note that -O2 is the default optimization level for PGI
-
-PGI_OPT := -O2 -fast
 
 ifeq ($(DEBUG),TRUE)
 
@@ -145,8 +150,10 @@ endif
 
 ########################################################################
 
-F90FLAGS += -module $(fmoddir) -I$(fmoddir) -Mdclchk
-FFLAGS   += -module $(fmoddir) -I$(fmoddir) -Mextend
+F90FLAGS += -Mdclchk
+FFLAGS   += -Mextend
+
+FMODULES = -module $(fmoddir) -I$(fmoddir)
 
 ########################################################################
 

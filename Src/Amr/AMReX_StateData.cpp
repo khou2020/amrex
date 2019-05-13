@@ -292,7 +292,7 @@ StateData::allocOldData ()
 }
 
 BCRec
-StateData::getBC (int comp, int i) const
+StateData::getBC (int comp, int i) const noexcept
 {
     BCRec bcr;
     amrex::setBC(grids[i],domain,desc->getBC(comp),bcr);
@@ -488,6 +488,12 @@ StateData::FillBoundary (FArrayBox&     dest,
             i++;
         }
     }
+
+#ifdef AMREX_USE_CUDA
+    // Add a synchronize here in case the user code launched kernels
+    // to handle the boundary fills.
+    AMREX_GPU_SAFE_CALL(cudaDeviceSynchronize());
+#endif
 }
 
 void
@@ -904,7 +910,7 @@ StateDataPhysBCFunct::FillBoundary (MultiFab& mf, int dest_comp, int num_comp, R
 			{
                             if (run_on_gpu)
                             {
-                                Gpu::AsyncFab asyncfab(lo_slab,num_comp);
+                                AsyncFab asyncfab(lo_slab,num_comp);
                                 FArrayBox* fab = asyncfab.fabPtr();
                                 const int ishift = -domain.length(dir);
                                 AMREX_LAUNCH_DEVICE_LAMBDA (lo_slab, tbx,
@@ -941,7 +947,7 @@ StateDataPhysBCFunct::FillBoundary (MultiFab& mf, int dest_comp, int num_comp, R
 			{
                             if (run_on_gpu)
                             {
-                                Gpu::AsyncFab asyncfab(hi_slab,num_comp);
+                                AsyncFab asyncfab(hi_slab,num_comp);
                                 FArrayBox* fab = asyncfab.fabPtr();
                                 const int ishift = domain.length(dir);
                                 AMREX_LAUNCH_DEVICE_LAMBDA (hi_slab, tbx,

@@ -15,7 +15,8 @@ extern "C" {
 }
 #endif
 
-namespace amrex { namespace Cuda {
+namespace amrex {
+namespace Cuda {
 
 template <typename T, typename = amrex::EnableIf_t<AMREX_IS_TRIVIALLY_COPYABLE(T)> >
 class AsyncArray
@@ -55,8 +56,8 @@ public:
 
     ~AsyncArray () { clear(); }
 
-    T const* data () const { return (d_data != nullptr) ? d_data : h_data; }
-    T* data () { return (d_data != nullptr) ? d_data : h_data; }
+    T const* data () const noexcept { return (d_data != nullptr) ? d_data : h_data; }
+    T* data () noexcept { return (d_data != nullptr) ? d_data : h_data; }
     void clear ()
     {
 #ifdef AMREX_USE_CUDA
@@ -79,11 +80,30 @@ public:
         h_data = nullptr;
     }
 
+    void copyToHost (T* h_p, std::size_t n) const
+    {
+        if (n == 0) return;
+#ifdef AMREX_USE_CUDA
+        if (d_data)
+        {
+            AMREX_GPU_SAFE_CALL(cudaMemcpyAsync(h_p, d_data, n*sizeof(T),
+                                                cudaMemcpyDeviceToHost, Device::cudaStream()));
+        }
+        else
+#endif
+        {
+            std::memcpy(h_p, h_data, n*sizeof(T));
+        }
+    }
+
 private:
     T* d_data = nullptr;
     T* h_data = nullptr;
 };
 
-}}
+}
+
+using Cuda::AsyncArray;
+}
 
 #endif

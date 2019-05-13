@@ -5,7 +5,11 @@
 #include <AMReX_Geometry.H>
 #include <AMReX_PhysBCFunct.H>
 #include <AMReX_Interpolater.H>
-#include <array>
+#include <AMReX_Array.H>
+
+#ifdef AMREX_USE_EB
+#include <AMReX_EB2.H>
+#endif
 
 namespace amrex
 {
@@ -44,6 +48,22 @@ namespace amrex
                              const InterpHook& pre_interp = NullInterpHook(),
                              const InterpHook& post_interp = NullInterpHook());
 
+#ifdef AMREX_USE_EB
+    void FillPatchTwoLevels (MultiFab& mf, Real time,
+                             const EB2::IndexSpace& index_space,
+			     const Vector<MultiFab*>& cmf, const Vector<Real>& ct,
+			     const Vector<MultiFab*>& fmf, const Vector<Real>& ft,
+			     int scomp, int dcomp, int ncomp,
+			     const Geometry& cgeom, const Geometry& fgeom,
+			     PhysBCFunctBase& cbc, int cbccomp,
+                             PhysBCFunctBase& fbc, int fbccomp,
+			     const IntVect& ratio,
+			     Interpolater* mapper,
+                             const Vector<BCRec>& bcs, int bcscomp,
+                             const InterpHook& pre_interp,
+                             const InterpHook& post_interp);
+#endif
+
     void InterpFromCoarseLevel (MultiFab& mf, Real time,
 				const MultiFab& cmf, int scomp, int dcomp, int ncomp,
 				const Geometry& cgeom, const Geometry& fgeom, 
@@ -55,16 +75,17 @@ namespace amrex
                                 const InterpHook& pre_interp = NullInterpHook(),
                                 const InterpHook& post_interp = NullInterpHook());
 
-    void InterpCrseFineBndryBfield (const std::array<MultiFab,AMREX_SPACEDIM>& crse,
-                                    std::array<MultiFab,AMREX_SPACEDIM>& fine,
-                                    const Geometry& cgeom, const Geometry& fgeom,
-                                    int ref_ratio);
-
     enum InterpEM_t { InterpE, InterpB};
 
     void InterpCrseFineBndryEMfield (InterpEM_t interp_type,
-                                     const std::array<MultiFab,AMREX_SPACEDIM>& crse,
-                                     std::array<MultiFab,AMREX_SPACEDIM>& fine,
+                                     const Array<MultiFab,AMREX_SPACEDIM>& crse,
+                                     Array<MultiFab,AMREX_SPACEDIM>& fine,
+                                     const Geometry& cgeom, const Geometry& fgeom,
+                                     int ref_ratio);
+
+    void InterpCrseFineBndryEMfield (InterpEM_t interp_type,
+                                     const Array<MultiFab const*,AMREX_SPACEDIM>& crse,
+                                     const Array<MultiFab*,AMREX_SPACEDIM>& fine,
                                      const Geometry& cgeom, const Geometry& fgeom,
                                      int ref_ratio);
 }

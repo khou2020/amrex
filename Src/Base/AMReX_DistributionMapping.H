@@ -48,6 +48,21 @@ class DistributionMapping
     //! The default constructor.
     DistributionMapping ();
 
+    //! The copy constructor.
+    DistributionMapping (const DistributionMapping& rhs) = default;
+
+    //! The copy assignment operator.
+    DistributionMapping& operator= (const DistributionMapping& rhs) = default;
+
+    //! The move constructor.
+    DistributionMapping (DistributionMapping&& rhs) noexcept = default;
+
+    //! The move assignment operator.
+    DistributionMapping& operator= (DistributionMapping&& rhs) noexcept = default;
+
+   //! The destructor.
+    ~DistributionMapping() noexcept = default;
+
     /**
     * \brief Create an object with the specified mapping.
     */
@@ -62,18 +77,6 @@ class DistributionMapping
     */
     DistributionMapping (const DistributionMapping& d1,
                          const DistributionMapping& d2);
-
-    //! The destructor.
-    ~DistributionMapping ();
-
-    //! Copy constructor.
-    DistributionMapping (const DistributionMapping& rhs);
-
-    //! Assignment operator.
-    DistributionMapping& operator= (const DistributionMapping& rhs);
-
-    //! Move constructor.
-    DistributionMapping (DistributionMapping&& rhs) noexcept;
 
     /**
     * \brief Build mapping out of BoxArray over nprocs processors.
@@ -93,18 +96,18 @@ class DistributionMapping
     * ProcessorMap()[i] is an integer in the interval [0, NCPU) where
     * NCPU is the number of CPUs being used.
     */
-    const Vector<int>& ProcessorMap () const;
+    const Vector<int>& ProcessorMap () const noexcept;
 
     //! Length of the underlying processor map.
-    long size () const { return m_ref->m_pmap.size(); }
-    long capacity () const { return m_ref->m_pmap.capacity(); }
-    bool empty () const { return m_ref->m_pmap.empty(); }
+    long size () const noexcept { return m_ref->m_pmap.size(); }
+    long capacity () const noexcept { return m_ref->m_pmap.capacity(); }
+    bool empty () const noexcept { return m_ref->m_pmap.empty(); }
 
     //! Number of references to this DistributionMapping
-    long linkCount () const { return m_ref.use_count(); }
+    long linkCount () const noexcept { return m_ref.use_count(); }
 
     //! Equivalent to ProcessorMap()[index].
-    int operator[] (int index) const { return m_ref->m_pmap[index]; }
+    int operator[] (int index) const noexcept { return m_ref->m_pmap[index]; }
 
     //! Set/get the distribution strategy.
     static void strategy (Strategy how);
@@ -117,10 +120,10 @@ class DistributionMapping
     static int SFC_Threshold ();
 
     //! Are the distributions equal?
-    bool operator== (const DistributionMapping& rhs) const;
+    bool operator== (const DistributionMapping& rhs) const noexcept;
 
     //! Are the distributions different?
-    bool operator!= (const DistributionMapping& rhs) const;
+    bool operator!= (const DistributionMapping& rhs) const noexcept;
 
     void SFCProcessorMap(const BoxArray& boxes, const std::vector<long>& wgts, int nprocs,
                          bool sort=true);
@@ -156,7 +159,11 @@ class DistributionMapping
     static DistributionMapping makeRoundRobin (const MultiFab& weight);
     static DistributionMapping makeSFC        (const MultiFab& weight, bool sort=true);
 
-    static std::vector<std::vector<int> > makeSFC (const BoxArray& ba);
+    /**
+    * if use_box_vol is true, weight boxes by their volume in Distribute
+    * otherwise, all boxes will be treated with equal weight
+    */
+    static std::vector<std::vector<int> > makeSFC (const BoxArray& ba, bool use_box_vol=true);
 
 private:
 
@@ -174,7 +181,7 @@ private:
     struct LIpairLT
     {
         bool operator () (const LIpair& lhs,
-                          const LIpair& rhs) const
+                          const LIpair& rhs) const noexcept
             {
                 return lhs.first < rhs.first;
             }
@@ -183,7 +190,7 @@ private:
     struct LIpairGT
     {
         bool operator () (const LIpair& lhs,
-                          const LIpair& rhs) const
+                          const LIpair& rhs) const noexcept
             {
                 return lhs.first > rhs.first;
             }
@@ -233,7 +240,7 @@ private:
         friend class DistributionMapping;
 
         //! Constructors to match those in DistributionMapping ....
-        Ref () {}
+        Ref () noexcept {}
 
         explicit Ref (int len) : m_pmap(len) {}
 
@@ -245,23 +252,22 @@ private:
 
         void clear () { m_pmap.clear();  m_index_array.clear();   m_ownership.clear(); }
 
-        Vector<int> m_pmap; // index array for all boxes
-        Vector<int> m_index_array;  // index array for local boxes owned by the team
-        std::vector<bool> m_ownership; // true ownership
+        Vector<int> m_pmap; //!< index array for all boxes
+        Vector<int> m_index_array;  //!< index array for local boxes owned by the team
+        std::vector<bool> m_ownership; //!< true ownership
     };
     //
-    // The data -- a reference-counted pointer to a Ref.
-    //
+    //! The data -- a reference-counted pointer to a Ref.
     std::shared_ptr<Ref> m_ref;
 
 public:
     struct RefID {
-        RefID () : data(nullptr) {}
-        explicit RefID (Ref* data_) : data(data_) {}
-        bool operator<  (const RefID& rhs) const { return std::less<Ref*>()(data,rhs.data); }
-        bool operator== (const RefID& rhs) const { return data == rhs.data; }
-        bool operator!= (const RefID& rhs) const { return data != rhs.data; }
-	const Ref *dataPtr() const { return data; }
+        RefID () noexcept : data(nullptr) {}
+        explicit RefID (Ref* data_) noexcept : data(data_) {}
+        bool operator<  (const RefID& rhs) const noexcept { return std::less<Ref*>()(data,rhs.data); }
+        bool operator== (const RefID& rhs) const noexcept { return data == rhs.data; }
+        bool operator!= (const RefID& rhs) const noexcept { return data != rhs.data; }
+	const Ref *dataPtr() const noexcept { return data; }
 	void PrintPtr(std::ostream &os) const { os << data << '\n'; }
         friend std::ostream& operator<< (std::ostream& os, const RefID& id);
    private:
@@ -269,7 +275,7 @@ public:
     };
 
     //! This gives a unique ID of the reference, which is different from dmID above.
-    RefID getRefID () const { return RefID { m_ref.get() }; }
+    RefID getRefID () const noexcept { return RefID { m_ref.get() }; }
 };
 
 //! Our output operator.

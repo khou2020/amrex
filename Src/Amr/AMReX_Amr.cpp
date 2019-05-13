@@ -36,10 +36,6 @@
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_Print.H>
 
-#ifdef AMREX_USE_FBOXLIB_MG
-#include <mg_cpp_f.h>
-#endif
-
 #ifdef BL_LAZY
 #include <AMReX_Lazy.H>
 #endif
@@ -55,7 +51,7 @@
 #ifdef USE_PERILLA
 #include <WorkerThread.H>
 #include <Perilla.H>
-#ifdef USE_PERILLA_PTHREADS
+#ifdef USE_PERILLA
     pthread_mutex_t teamFinishLock=PTHREAD_MUTEX_INITIALIZER;
 #ifdef PERILLA_USE_UPCXX
 extern struct rMsgMap_t{
@@ -128,7 +124,7 @@ namespace
 
 
 bool
-Amr::UsingPrecreateDirectories()
+Amr::UsingPrecreateDirectories () noexcept
 {
     return precreateDirectories;
 }
@@ -188,38 +184,38 @@ Amr::DataLog (int i)
 }
 
 int
-Amr::NumDataLogs ()
+Amr::NumDataLogs () noexcept
 {
     return datalog.size();
 }
 
 bool
-Amr::RegridOnRestart () const
+Amr::RegridOnRestart () const noexcept
 {
     return regrid_on_restart;
 }
 
 void
-Amr::setDtMin (const Vector<Real>& dt_min_in)
+Amr::setDtMin (const Vector<Real>& dt_min_in) noexcept
 {
     for (int i = 0; i <= finest_level; i++)
         dt_min[i] = dt_min_in[i];
 }
 
 Vector<std::unique_ptr<AmrLevel> >&
-Amr::getAmrLevels ()
+Amr::getAmrLevels () noexcept
 {
     return amr_level;
 }
 
 long
-Amr::cellCount (int lev)
+Amr::cellCount (int lev) noexcept
 {
     return amr_level[lev]->countCells();
 }
 
 int
-Amr::numGrids (int lev)
+Amr::numGrids (int lev) noexcept
 {
     return amr_level[lev]->numGrids();
 }
@@ -612,6 +608,20 @@ Amr::clearStatePlotVarList ()
 }
 
 void
+Amr::fillStateSmallPlotVarList ()
+{
+    state_small_plot_vars.clear();
+    const DescriptorList &desc_lst = AmrLevel::get_desc_lst();
+    for (int typ(0); typ < desc_lst.size(); ++typ) {
+        for (int comp(0); comp < desc_lst[typ].nComp(); ++comp) {
+            if (desc_lst[typ].getType() == IndexType::TheCellType()) {
+                state_small_plot_vars.push_back(desc_lst[typ].name(comp));
+	    }
+	}
+    }
+}
+
+void
 Amr::clearStateSmallPlotVarList ()
 {
     state_small_plot_vars.clear();
@@ -641,7 +651,7 @@ Amr::deleteStatePlotVar (const std::string& name)
 }
 
 bool
-Amr::isDerivePlotVar (const std::string& name)
+Amr::isDerivePlotVar (const std::string& name) noexcept
 {
     for (std::list<std::string>::const_iterator li = derive_plot_vars.begin(), End = derive_plot_vars.end();
          li != End;
@@ -656,7 +666,7 @@ Amr::isDerivePlotVar (const std::string& name)
 }
 
 bool
-Amr::isDeriveSmallPlotVar (const std::string& name)
+Amr::isDeriveSmallPlotVar (const std::string& name) noexcept
 {
     for (std::list<std::string>::const_iterator li = derive_small_plot_vars.begin(), End = derive_small_plot_vars.end();
          li != End;
@@ -804,27 +814,27 @@ Amr::setRecordDataInfo (int i, const std::string& filename)
 }
 
 void
-Amr::setDtLevel (const Vector<Real>& dt_lev)
+Amr::setDtLevel (const Vector<Real>& dt_lev) noexcept
 {
     for (int i = 0; i <= finest_level; i++)
         dt_level[i] = dt_lev[i];
 }
 
 void
-Amr::setDtLevel (Real dt, int lev)
+Amr::setDtLevel (Real dt, int lev) noexcept
 {
     dt_level[lev] = dt;
 }
 
 void
-Amr::setNCycle (const Vector<int>& ns)
+Amr::setNCycle (const Vector<int>& ns) noexcept
 {
     for (int i = 0; i <= finest_level; i++)
         n_cycle[i] = ns[i];
 }
 
 long
-Amr::cellCount ()
+Amr::cellCount () noexcept
 {
     long cnt = 0;
     for (int i = 0; i <= finest_level; i++)
@@ -833,7 +843,7 @@ Amr::cellCount ()
 }
 
 int
-Amr::numGrids ()
+Amr::numGrids () noexcept
 {
     int cnt = 0;
     for (int i = 0; i <= finest_level; i++)
@@ -842,7 +852,7 @@ Amr::numGrids ()
 }
 
 int
-Amr::okToContinue ()
+Amr::okToContinue () noexcept
 {
     int ok = true;
     for (int i = 0; ok && (i <= finest_level); i++)
@@ -870,6 +880,12 @@ Amr::writePlotFile ()
     if (first_plotfile) {
         first_plotfile = false;
         amr_level[0]->setPlotVariables();
+    }
+
+    // Don't continue if we have no variables to plot.
+
+    if (statePlotVars().size() == 0) {
+      return;
     }
 
     Real dPlotFileTime0 = amrex::second();
@@ -1191,11 +1207,11 @@ Amr::init (Real strt_time,
         initialInit(strt_time,stop_time);
         checkPoint();
 
-        if(plot_int > 0 || plot_per > 0) {
+        if(plot_int > 0 || plot_per > 0 || plot_log_per > 0) {
             writePlotFile();
         }
 
-        if (small_plot_int > 0 || small_plot_per > 0)
+        if (small_plot_int > 0 || small_plot_per > 0 || small_plot_log_per > 0)
 	        writeSmallPlotFile();
 
         updateInSitu();
@@ -1907,7 +1923,7 @@ Amr::checkPoint ()
 }
 
 void
-Amr::RegridOnly (Real time)
+Amr::RegridOnly (Real time, bool do_io)
 {
     BL_ASSERT(regrid_on_restart == 1);
 
@@ -1916,14 +1932,18 @@ Amr::RegridOnly (Real time)
     for (int i = 0; i <= lev_top; i++)
        regrid(i,time);
 
-    if (plotfile_on_restart)
-	writePlotFile();
+    if (do_io) {
 
-    if (checkpoint_on_restart)
-       checkPoint();
+        if (plotfile_on_restart)
+            writePlotFile();
 
-    if (insitu_on_restart)
-        updateInSitu();
+        if (checkpoint_on_restart)
+            checkPoint();
+
+        if (insitu_on_restart)
+            updateInSitu();
+
+    }
 }
 
 void
@@ -1933,7 +1953,7 @@ Amr::timeStep (int  level,
                int  niter,
                Real stop_time)
 {
-#ifdef USE_PERILLA
+#if defined(USE_PERILLA_PTHREADS) || defined(USE_PERILLA_OMP)
     perilla::syncAllWorkerThreads();
     if(perilla::isMasterThread())
     {
@@ -1974,11 +1994,13 @@ Amr::timeStep (int  level,
             if (okToRegrid(i))
             {
 #ifdef USE_PERILLA
+#if defined(USE_PERILLA_PTHREADS) || defined(USE_PERILLA_OMP)
 		//ask the communication thread to stop so that I can update the metadata
                 Perilla::updateMetadata_request=1;
 		while(!Perilla::updateMetadata_noticed){
 
 		}
+#endif
                 //for (int k(i>0?i-1:0); k <= finest_level; ++k) {
                 for (int k=0; k <= finest_level; ++k) {
                     if(metadataChanged[k]==false){
@@ -2070,7 +2092,7 @@ Amr::timeStep (int  level,
 		       << "ADVANCE with dt = " << dt_level[level] << "\n";
     }
 
-#ifdef USE_PERILLA
+#if defined(USE_PERILLA_PTHREADS) || defined(USE_PERILLA_OMP)
     }
     perilla::syncAllWorkerThreads();
 #endif
@@ -2079,7 +2101,7 @@ Amr::timeStep (int  level,
     Real dt_new = amr_level[level]->advance(time,dt_level[level],iteration,niter);
     BL_PROFILE_REGION_STOP("amr_level.advance");
 
-#ifdef USE_PERILLA
+#if defined(USE_PERILLA_PTHREADS) || defined(USE_PERILLA_OMP)
     perilla::syncWorkerThreads();
     if(perilla::isMasterThread())
     {
@@ -2120,7 +2142,7 @@ Amr::timeStep (int  level,
 #endif
     }
 
-#ifdef USE_PERILLA
+#if defined(USE_PERILLA_PTHREADS) || defined(USE_PERILLA_OMP)
     }
     perilla::syncAllWorkerThreads();
 #endif
@@ -2147,20 +2169,20 @@ Amr::timeStep (int  level,
         }
     }
 
-#ifdef USE_PERILLA
+#if defined(USE_PERILLA_PTHREADS) || defined(USE_PERILLA_OMP)
     perilla::syncAllWorkerThreads();
 #endif
 
     amr_level[level]->post_timestep(iteration);
 
-#ifdef USE_PERILLA
+#if defined(USE_PERILLA_PTHREADS) || defined(USE_PERILLA_OMP)
     perilla::syncAllWorkerThreads();
     if(perilla::isMasterThread())
     {
 #endif
     // Set this back to negative so we know whether we are in fact in this routine
     which_level_being_advanced = -1;
-#ifdef USE_PERILLA
+#if defined(USE_PERILLA_PTHREADS) || defined(USE_PERILLA_OMP)
     }
     perilla::syncAllWorkerThreads();
 #endif
@@ -2179,6 +2201,8 @@ Amr::coarseTimeStep (Real stop_time)
     Real      run_stop;
     Real run_strt;
 #ifdef USE_PERILLA_PTHREADS
+    //mpi+pthreads (default) or upcxx+pthreads
+    std::vector<RegionGraph*> flattenedGraphArray;
     perilla::syncAllThreads();
     if(perilla::isMasterThread())
     {
@@ -2217,18 +2241,18 @@ Amr::coarseTimeStep (Real stop_time)
 
     BL_PROFILE_REGION_START(stepName.str());
 
+#ifdef USE_PERILLA
+    std::vector<RegionGraph*> flattenedGraphArray;
 #ifdef USE_PERILLA_PTHREADS
+    //mpi+pthreads (default) or upcxx+pthreads
     }
     perilla::syncAllThreads();
-#endif
 
-#ifdef USE_PERILLA
-#ifdef USE_PERILLA_PTHREADS
     if(perilla::isMasterThread()){
-        Perilla::numTeamsFinished = 0;
         Perilla::updateMetadata_request = 0;
         Perilla::updateMetadata_noticed = 0;
         Perilla::updateMetadata_done = 0;
+        Perilla::numTeamsFinished = 0;
         RegionGraph::graphCnt = 0;
         if(levelSteps(0)==0){
 	    graphArray.resize(finest_level+1);
@@ -2242,11 +2266,10 @@ Amr::coarseTimeStep (Real stop_time)
         }
     }
     perilla::syncAllThreads();
-    std::vector<RegionGraph*> flattenedGraphArray;
-    Perilla::flattenGraphHierarchy(graphArray, flattenedGraphArray);
 
     if(perilla::isCommunicationThread())
     {
+        Perilla::flattenGraphHierarchy(graphArray, flattenedGraphArray);
 	bool doublechecked=false;
         while(true){
    	    if(!Perilla::updateMetadata_request){
@@ -2254,8 +2277,6 @@ Amr::coarseTimeStep (Real stop_time)
                 if( Perilla::numTeamsFinished == perilla::NUM_THREAD_TEAMS)
 		{
                     Perilla::syncProcesses();
-    		    for(int g=0; g<flattenedGraphArray.size(); g++)
-	    		flattenedGraphArray[g]->graphTeardown();
 	            flattenedGraphArray.clear();
                     Perilla::syncProcesses();
                     break;
@@ -2315,33 +2336,7 @@ Amr::coarseTimeStep (Real stop_time)
             pthread_mutex_unlock(&teamFinishLock);
         }
     }
-#else
-    Perilla::numTeamsFinished = 0;
-    RegionGraph::graphCnt = 0;
-    if(levelSteps(0)==0){
-	graphArray.resize(finest_level+1);
-        for(int i=0; i<= finest_level; i++)
-            getLevel(i).initPerilla(cumtime);
-        Perilla::communicateTags();
-    }
 
-#pragma omp parallel
-    {
-        if(perilla::isCommunicationThread())
-        {
-            Perilla::serviceMultipleGraphCommDynamic(graphArray,true,perilla::tid());
-        }
-        else{
-            timeStep(0,cumtime,1,1,stop_time);
-            if(perilla::isMasterWorkerThread()){
-#pragma omp atomic
-                Perilla::numTeamsFinished++;
-            }
-        }
-    }
-#endif
-
-#ifdef USE_PERILLA
     perilla::syncAllThreads();
     if(perilla::isMasterThread()){
         if(!okToContinue() || (level_steps[0] == Perilla::max_step) || (stop_time -(dt_level[0] + cumTime())<=0)){
@@ -2350,8 +2345,59 @@ Amr::coarseTimeStep (Real stop_time)
             }
         }
     }
+#else
+    Perilla::numTeamsFinished = 0;
+    RegionGraph::graphCnt = 0;
+    if(levelSteps(0)==0){
+	graphArray.resize(finest_level+1);
+        for(int i=0; i<= finest_level; i++)
+            getLevel(i).initPerilla(cumtime);
+        if(ParallelDescriptor::NProcs()>1){
+            Perilla::communicateTags();
+        }
+    }
+
+#ifdef USE_PERILLA_OMP
+#pragma omp parallel
+    {
+        if(perilla::isCommunicationThread())
+        {
+            while(true){
+                Perilla::flattenGraphHierarchy(graphArray, flattenedGraphArray);
+                Perilla::serviceMultipleGraphCommDynamic(flattenedGraphArray,true,perilla::tid());
+                if( Perilla::numTeamsFinished == perilla::NUM_THREAD_TEAMS)
+                {
+                    flattenedGraphArray.clear();
+                    break;
+                }
+            }
+        }
+        else{
+            timeStep(0,cumtime,1,1,stop_time);
+            if(perilla::isMasterWorkerThread()){
+		#pragma omp atomic
+                Perilla::numTeamsFinished++;
+            }
+        }
+    }
+#elif defined(USE_PERILLA_ON_DEMAND)
+    //RTS on-demand
+    timeStep(0,cumtime,1,1,stop_time);
+#else
+    cout<<"Undefined Async Mode"<<endl;
+    exit(0);
 #endif
 
+#if 0
+    if(!okToContinue() || (level_steps[0] == Perilla::max_step) || (stop_time -(dt_level[0] + cumTime())<=0)){
+        for(int i=0; i<= finest_level; i++){
+            getLevel(i).finalizePerilla(cumtime);
+        }
+    }
+#endif
+//end nonPthreads backends
+#endif
+//end Perilla backends
 #else
     //synchronous
     timeStep(0,cumtime,1,1,stop_time);
@@ -2439,13 +2485,41 @@ Amr::coarseTimeStep (Real stop_time)
 
     if (check_per > 0.0)
     {
-      const int num_per_old = (cumtime-dt_level[0]) / check_per;
-      const int num_per_new = (cumtime            ) / check_per;
 
-      if (num_per_old != num_per_new)
-      {
-	check_test = 1;
-      }
+        // Check to see if we've crossed a check_per interval by comparing
+        // the number of intervals that have elapsed for both the current
+        // time and the time at the beginning of this timestep.
+
+        int num_per_old = (cumtime-dt_level[0]) / check_per;
+        int num_per_new = (cumtime            ) / check_per;
+
+        // Before using these, however, we must test for the case where we're
+        // within machine epsilon of the next interval. In that case, increment
+        // the counter, because we have indeed reached the next check_per interval
+        // at this point.
+
+        const Real eps = std::numeric_limits<Real>::epsilon() * 10.0 * std::abs(cumtime);
+        const Real next_chk_time = (num_per_old + 1) * check_per;
+
+        if ((num_per_new == num_per_old) && std::abs(cumtime - next_chk_time) <= eps)
+        {
+            num_per_new += 1;
+        }
+
+        // Similarly, we have to account for the case where the old time is within
+        // machine epsilon of the beginning of this interval, so that we don't double
+        // count that time threshold -- we already plotted at that time on the last timestep.
+
+        if ((num_per_new != num_per_old) && std::abs((cumtime - dt_level[0]) - next_chk_time) <= eps)
+        {
+            num_per_old += 1;
+        }
+
+        if (num_per_old != num_per_new)
+        {
+            check_test = 1;
+        }
+
     }
 
     int to_stop       = 0;    
@@ -2556,18 +2630,71 @@ Amr::coarseTimeStep (Real stop_time)
 }
 
 bool
-Amr::writePlotNow()
+Amr::writePlotNow() noexcept
 {
     int plot_test = 0;
     if (plot_per > 0.0)
     {
-      const int num_per_old = (cumtime-dt_level[0]) / plot_per;
-      const int num_per_new = (cumtime            ) / plot_per;
 
-      if (num_per_old != num_per_new)
-	{
-	  plot_test = 1;
-	}
+        // Check to see if we've crossed a plot_per interval by comparing
+        // the number of intervals that have elapsed for both the current
+        // time and the time at the beginning of this timestep.
+
+        int num_per_old = (cumtime-dt_level[0]) / plot_per;
+        int num_per_new = (cumtime            ) / plot_per;
+
+        // Before using these, however, we must test for the case where we're
+        // within machine epsilon of the next interval. In that case, increment
+        // the counter, because we have indeed reached the next plot_per interval
+        // at this point.
+
+        const Real eps = std::numeric_limits<Real>::epsilon() * 10.0 * std::abs(cumtime);
+        const Real next_plot_time = (num_per_old + 1) * plot_per;
+
+        if ((num_per_new == num_per_old) && std::abs(cumtime - next_plot_time) <= eps)
+        {
+            num_per_new += 1;
+        }
+
+        // Similarly, we have to account for the case where the old time is within
+        // machine epsilon of the beginning of this interval, so that we don't double
+        // count that time threshold -- we already plotted at that time on the last timestep.
+
+        if ((num_per_new != num_per_old) && std::abs((cumtime - dt_level[0]) - next_plot_time) <= eps)
+        {
+            num_per_old += 1;
+        }
+
+        if (num_per_old != num_per_new)
+        {
+            plot_test = 1;
+        }
+
+    }
+
+    if (plot_log_per > 0.0)
+    {
+
+        // Check to see if we've crossed a plot_log_per interval by comparing
+        // the number of intervals that have elapsed for both the current
+        // time and the time at the beginning of this timestep.
+        // This only works when cumtime > 0.
+
+        int num_per_old = 0;
+        int num_per_new = 0;
+
+        if (cumtime-dt_level[0] > 0.) {
+            num_per_old = log10(cumtime-dt_level[0]) / plot_log_per;
+        }
+        if (cumtime > 0.) {
+            num_per_new = log10(cumtime) / plot_log_per;
+        }
+
+        if (num_per_old != num_per_new)
+        {
+            plot_test = 1;
+        }
+
     }
 
     return ( (plot_int > 0 && level_steps[0] % plot_int == 0) || 
@@ -2576,18 +2703,71 @@ Amr::writePlotNow()
 } 
 
 bool
-Amr::writeSmallPlotNow()
+Amr::writeSmallPlotNow() noexcept
 {
     int plot_test = 0;
     if (small_plot_per > 0.0)
     {
-      const int num_per_old = (cumtime-dt_level[0]) / small_plot_per;
-      const int num_per_new = (cumtime            ) / small_plot_per;
 
-      if (num_per_old != num_per_new)
+        // Check to see if we've crossed a small_plot_per interval by comparing
+        // the number of intervals that have elapsed for both the current
+        // time and the time at the beginning of this timestep.
+
+        int num_per_old = (cumtime-dt_level[0]) / small_plot_per;
+        int num_per_new = (cumtime            ) / small_plot_per;
+
+        // Before using these, however, we must test for the case where we're
+        // within machine epsilon of the next interval. In that case, increment
+        // the counter, because we have indeed reached the next small_plot_per interval
+        // at this point.
+
+        const Real eps = std::numeric_limits<Real>::epsilon() * 10.0 * std::abs(cumtime);
+        const Real next_plot_time = (num_per_old + 1) * small_plot_per;
+
+        if ((num_per_new == num_per_old) && std::abs(cumtime - next_plot_time) <= eps)
+        {
+            num_per_new += 1;
+        }
+
+        // Similarly, we have to account for the case where the old time is within
+        // machine epsilon of the beginning of this interval, so that we don't double
+        // count that time threshold -- we already plotted at that time on the last timestep.
+
+        if ((num_per_new != num_per_old) && std::abs((cumtime - dt_level[0]) - next_plot_time) <= eps)
+        {
+            num_per_old += 1;
+        }
+
+        if (num_per_old != num_per_new)
 	{
-	  plot_test = 1;
+            plot_test = 1;
 	}
+
+    }
+
+    if (small_plot_log_per > 0.0)
+    {
+
+        // Check to see if we've crossed a small_plot_log_per interval by comparing
+        // the number of intervals that have elapsed for both the current
+        // time and the time at the beginning of this timestep.
+        // This only works when cumtime > 0.
+
+        int num_per_old = 0;
+        int num_per_new = 0;
+
+        if (cumtime-dt_level[0] > 0.) {
+            num_per_old = log10(cumtime-dt_level[0]) / small_plot_log_per;
+        }
+        if (cumtime > 0.) {
+            num_per_new = log10(cumtime) / small_plot_log_per;
+        }
+
+        if (num_per_old != num_per_new)
+        {
+            plot_test = 1;
+        }
+
     }
 
     return ( (small_plot_int > 0 && level_steps[0] % small_plot_int == 0) || 
@@ -2714,12 +2894,6 @@ Amr::regrid (int  lbase,
     }
 
     finest_level = new_finest;
-    //
-    // Flush the caches.
-    //
-#ifdef AMREX_USE_FBOXLIB_MG
-    mgt_flush_copyassoc_cache();
-#endif
 
     //
     // Define the new grids from level start up to new_finest.
@@ -3097,7 +3271,7 @@ Amr::grid_places (int              lbase,
 void
 Amr::ErrorEst (int lev, TagBoxArray& tags, Real time, int ngrow)
 {
-    amr_level[lev]->errorEst(tags,TagBox::CLEAR,TagBox::SET,time, n_error_buf[lev],ngrow);
+    amr_level[lev]->errorEst(tags,TagBox::CLEAR,TagBox::SET,time, n_error_buf[lev][0], ngrow);
 }
 
 BoxArray
@@ -3325,6 +3499,9 @@ Amr::initPltAndChk ()
     plot_per = -1.0;
     pp.query("plot_per",plot_per);
 
+    plot_log_per = -1.0;
+    pp.query("plot_log_per",plot_log_per);
+
     if (plot_int > 0 && plot_per > 0)
     {
         if (ParallelDescriptor::IOProcessor())
@@ -3339,6 +3516,9 @@ Amr::initPltAndChk ()
 
     small_plot_per = -1.0;
     pp.query("small_plot_per",small_plot_per);
+
+    small_plot_log_per = -1.0;
+    pp.query("small_plot_log_per",small_plot_log_per);
 
     if (small_plot_int > 0 && small_plot_per > 0)
     {
@@ -3372,7 +3552,7 @@ Amr::initPltAndChk ()
 
 
 bool
-Amr::okToRegrid(int level)
+Amr::okToRegrid(int level) noexcept
 {
     if (regrid_int[level] < 0)
         return false;
@@ -3427,7 +3607,7 @@ Amr::computeOptimalSubcycling(int n, int* best, Real* dt_max, Real* est_work, in
     return best_dt;
 }
 
-const Vector<BoxArray>& Amr::getInitialBA()
+const Vector<BoxArray>& Amr::getInitialBA() noexcept
 {
   return initial_ba;
 }

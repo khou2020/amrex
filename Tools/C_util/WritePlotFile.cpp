@@ -291,6 +291,7 @@ writePlotFile (const char*               name,
 }
 
 void WritePlotFile(const Vector<MultiFab*>&   mfa,
+                   const Vector<Box>&         probDomain,
 		   AmrData&                   amrdToMimic,
 		   const std::string&         oFile,
 		   bool                       verbose,
@@ -300,7 +301,8 @@ void WritePlotFile(const Vector<MultiFab*>&   mfa,
     const Vector<std::string>& derives = (varNames.size()==0 ? amrdToMimic.PlotVarNames() : varNames);
     AMREX_ASSERT(derives.size()==(*mfa[0]).nComp());
     int ntype = derives.size();
-    int finestLevel = amrdToMimic.FinestLevel();    
+    int finestLevel = mfa.size() - 1;
+    AMREX_ALWAYS_ASSERT(finestLevel >= 0);
     
     if (ParallelDescriptor::IOProcessor())
         if (!amrex::UtilCreateDirectory(oFile,0755))
@@ -343,7 +345,7 @@ void WritePlotFile(const Vector<MultiFab*>&   mfa,
     os << '\n';
     for (i = 0; i < finestLevel; i++) os << amrdToMimic.RefRatio()[i] << ' ';
     os << '\n';
-    for (i = 0; i <= finestLevel; i++) os << amrdToMimic.ProbDomain()[i] << ' ';
+    for (i = 0; i <= finestLevel; i++) os << probDomain[i] << ' ';
     os << '\n';
     for (i = 0; i <= finestLevel; i++) os << 0 << ' ';
     os << '\n';
@@ -420,4 +422,13 @@ void WritePlotFile(const Vector<MultiFab*>&   mfa,
     }
 
     os.close();
+}
+
+void WritePlotFile(const Vector<MultiFab*>&   mfa,
+		   AmrData&                   amrdToMimic,
+		   const std::string&         oFile,
+		   bool                       verbose,
+                   const Vector<std::string>& varNames)
+{
+    WritePlotFile(mfa,amrdToMimic.ProbDomain(),amrdToMimic,oFile,verbose,varNames);
 }

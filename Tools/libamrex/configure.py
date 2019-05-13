@@ -13,9 +13,9 @@ def configure(argv):
     argv[0] = "configure" # So the help message print it
     parser = argparse.ArgumentParser()
     parser.add_argument("--prefix",
-                        help="Install libarmex, headers and Fortran modules in PREFIX directory [default=tmp_install_dir]",
+                        help="Install libamrex, headers and Fortran modules in PREFIX directory [default=tmp_install_dir]",
                         default="tmp_install_dir")
-    parser.add_argument("--dim", 
+    parser.add_argument("--dim",
                         help="Dimension [default=3]",
                         choices=['1','2','3'],
                         default="3")
@@ -59,6 +59,10 @@ def configure(argv):
                         help="Enable Hypre as an option for bottom solver of AMReX linear solvers [default=no]",
                         choices=["yes","no"],
                         default="no")
+    parser.add_argument("--enable-petsc",
+                        help="Enable PETSc as an option for bottom solver of AMReX linear solvers [default=no]",
+                        choices=["yes","no"],
+                        default="no")
     parser.add_argument("--enable-eb",
                         help="Enable AMReX embedded boundary capability [default=no]",
                         choices=["yes","no"],
@@ -75,64 +79,36 @@ def configure(argv):
                         help="Use SENSEI in situ [default=no]",
                         choices=["yes","no"],
                         default="no")
+    parser.add_argument("--with-omp-offload",
+                        help="Use OpenMP-offload [default=no]",
+                        choices=["yes","no"],
+                        default="no")
+    parser.add_argument("--enable-tiny-profile",
+                        help="Enable tiny profile [default=no]",
+                        choices=["yes","no"],
+                        default="no")
     args = parser.parse_args()
 
     f = open("GNUmakefile","w")
     f.write("AMREX_INSTALL_DIR = " + args.prefix.strip() + "\n")
-    f.write("DIM = "+args.dim.strip() + "\n")
-    if args.with_mpi == "no":
-        f.write("USE_MPI = FALSE\n")
-    else:
-        f.write("USE_MPI = TRUE\n")
-    if args.with_omp == "no":
-        f.write("USE_OMP = FALSE\n")
-    else:
-        f.write("USE_OMP = TRUE\n")
-    if args.with_cuda == "no":
-        f.write("USE_CUDA = FALSE\n")
-    else:
-        f.write("USE_CUDA = TRUE\n")
-    if args.with_acc == "no":
-        f.write("USE_ACC = FALSE\n")
-    else:
-        f.write("USE_OMP = TRUE\n")
+    f.write("DIM = " + args.dim.strip() + "\n")
+    f.write("USE_MPI = {}\n".format("FALSE" if args.with_mpi == "no" else "TRUE"))
+    f.write("USE_OMP = {}\n".format("FALSE" if args.with_omp == "no" else "TRUE"))
+    f.write("USE_CUDA = {}\n".format("FALSE" if args.with_cuda == "no" else "TRUE"))
+    f.write("USE_ACC = {}\n".format("FALSE" if args.with_acc == "no" else "TRUE"))
     f.write("COMP = " + args.comp.strip() + "\n")
-    if args.debug == "yes":
-        f.write("DEBUG = TRUE\n")
-    else:
-        f.write("DEBUG = FALSE\n")
-    if args.enable_particle == "no":
-        f.write("USE_PARTICLES = FALSE\n")
-    else:
-        f.write("USE_PARTICLES = TRUE\n")
-    if args.enable_fortran_api == "no":
-        f.write("USE_FORTRAN_INTERFACE = FALSE\n")
-    else:
-        f.write("USE_FORTRAN_INTERFACE = TRUE\n")
-    if args.enable_linear_solver == "no":
-        f.write("USE_LINEAR_SOLVERS = FALSE\n")
-    else:
-        f.write("USE_LINEAR_SOLVERS = TRUE\n")
-    if args.enable_hypre == "yes":
-        f.write("USE_HYPRE = TRUE\n")
-    else:
-        f.write("USE_HYPRE = FALSE\n")
-    if args.enable_eb == "yes":
-        f.write("USE_EB = TRUE\n")
-    else:
-        f.write("USE_EB = FALSE\n")
-    if args.enable_xsdk_defaults == "yes":
-        f.write("AMREX_XSDK = TRUE\n")
-    else:
-        f.write("AMREX_XSDK = FALSE\n")
-    if args.allow_different_compiler == "no":
-        f.write("ALLOW_DIFFERENT_COMP = FALSE\n")
-    else:
-        f.write("ALLOW_DIFFERENT_COMP = TRUE\n")
-    if args.with_sensei_insitu == "no":
-        f.write("USE_SENSEI_INSITU = FALSE\n")
-    else:
-        f.write("USE_SENSEI_INSITU = TRUE\n")
+    f.write("DEBUG = {}\n".format("TRUE" if args.debug == "yes" else "FALSE"))
+    f.write("USE_PARTICLES = {}\n".format("FALSE" if args.enable_particle == "no" else "TRUE"))
+    f.write("USE_FORTRAN_INTERFACE = {}\n".format("FALSE" if args.enable_fortran_api == "no" else "TRUE"))
+    f.write("USE_LINEAR_SOLVERS = {}\n".format("FALSE" if args.enable_linear_solver == "no" else "TRUE"))
+    f.write("USE_HYPRE = {}\n".format("TRUE" if args.enable_hypre == "yes" else "FALSE"))
+    f.write("USE_PETSC = {}\n".format("TRUE" if args.enable_petsc == "yes" else "FALSE"))
+    f.write("USE_EB = {}\n".format("TRUE" if args.enable_eb == "yes" else "FALSE"))
+    f.write("AMREX_XSDK = {}\n".format("TRUE" if args.enable_xsdk_defaults == "yes" else "FALSE"))
+    f.write("ALLOW_DIFFERENT_COMP = {}\n".format("FALSE" if args.allow_different_compiler == "no" else "TRUE"))
+    f.write("USE_SENSEI_INSITU = {}\n".format("FALSE" if args.with_sensei_insitu == "no" else "TRUE"))
+    f.write("USE_OMP_OFFLOAD = {}\n".format("FALSE" if args.with_omp_offload == "no" else "TRUE"))
+    f.write("TINY_PROFILE = {}\n".format("FALSE" if args.enable_tiny_profile == "no" else "TRUE"))
     f.write("\n")
 
     fin = open("GNUmakefile.in","r")

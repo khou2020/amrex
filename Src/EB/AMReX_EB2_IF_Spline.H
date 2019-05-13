@@ -3,6 +3,7 @@
 #define AMREX_EB2_IF_SPLINE_H_
 
 #include <vector>
+#include <AMReX_EB2_IF_Base.H>
 #include "AMReX_RealVect.H"
 #include "AMReX.H"
 #include "AMReX_Vector.H"
@@ -16,10 +17,10 @@ namespace amrex { namespace EB2 {
  */
 class SplineIF {
  public:
-  // Constructor
+  //! Constructor
   SplineIF() {}
 
-  // Destructor
+  //! Destructor
   ~SplineIF() {}
 
   void addSplineElement(std::vector<amrex::RealVect> pts) {
@@ -53,8 +54,8 @@ class SplineIF {
     return dist*side;
   }
 
-  // private:
-  // The geometry elements used to compute distance function
+  //! private:
+  //! The geometry elements used to compute distance function
   amrex::Vector<distFcnElement2d*> geomElements;
 };
 

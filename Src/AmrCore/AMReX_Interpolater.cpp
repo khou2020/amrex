@@ -10,8 +10,15 @@
 namespace amrex {
 
 //
-// Note that in 1D, CellQuadratic
-// interpolation are turned off in a hardwired way.
+// PCInterp, NodeBilinear, and CellConservativeLinear are supported for all dimensions on cpu and gpu.
+//
+// CellConsertiveProtected only works in 2D and 3D on cpu.
+//
+// CellBilinear only works in 1D and 2D and 3D on cpu.
+//
+// CellQuadratic only works in 2D and 3D on cpu.
+//
+// CellConservativeQuartic only works with ref ratio of 2 on cpu
 //
 
 //
@@ -98,34 +105,31 @@ NodeBilinear::interp (const FArrayBox&  crse,
                       const IntVect&    ratio,
                       const Geometry& /*crse_geom */,
                       const Geometry& /*fine_geom */,
-                      Vector<BCRec>&   /*bcr*/,
-                      int               actual_comp,
-                      int               actual_state)
+                      Vector<BCRec> const& /*bcr*/,
+                      int               /*actual_comp*/,
+                      int               /*actual_state*/)
 {
     BL_PROFILE("NodeBilinear::interp()");
-    //
-    // Set up to call FORTRAN.
-    //
-    const int* clo = crse.box().loVect();
-    const int* chi = crse.box().hiVect();
-    const int* flo = fine.loVect();
-    const int* fhi = fine.hiVect();
-    const int* lo  = fine_region.loVect();
-    const int* hi  = fine_region.hiVect();
-    int num_slope  = AMREX_D_TERM(2,*2,*2)-1;
-    int len0       = crse.box().length(0);
-    int slp_len    = num_slope*len0;
 
-    Vector<Real> strip(slp_len);
+    FArrayBox const* crsep = &crse;
+    FArrayBox* finep = &fine;
 
-    const Real* cdat  = crse.dataPtr(crse_comp);
-    Real*       fdat  = fine.dataPtr(fine_comp);
-    const int* ratioV = ratio.getVect();
+    Gpu::LaunchSafeGuard lg(Gpu::isGpuPtr(crsep) && Gpu::isGpuPtr(finep));
 
-    amrex_nbinterp (cdat,AMREX_ARLIM(clo),AMREX_ARLIM(chi),AMREX_ARLIM(clo),AMREX_ARLIM(chi),
-                   fdat,AMREX_ARLIM(flo),AMREX_ARLIM(fhi),AMREX_ARLIM(lo),AMREX_ARLIM(hi),
-                   AMREX_D_DECL(&ratioV[0],&ratioV[1],&ratioV[2]),&ncomp,
-                   strip.dataPtr(),&num_slope,&actual_comp,&actual_state);
+    int num_slope  = ncomp*(AMREX_D_TERM(2,*2,*2)-1);
+    const Box cslope_bx = amrex::enclosedCells(CoarseBox(fine_region, ratio));
+    AsyncFab as_slopefab(cslope_bx, num_slope);
+    FArrayBox* slopefab = as_slopefab.fabPtr();
+
+    AMREX_LAUNCH_HOST_DEVICE_LAMBDA (cslope_bx, tbx,
+    {
+        amrex::nodebilin_slopes(tbx, *slopefab, *crsep, crse_comp, ncomp, ratio);
+    });
+
+    AMREX_LAUNCH_HOST_DEVICE_LAMBDA (fine_region, tbx,
+    {
+        amrex::nodebilin_interp(tbx, *finep, fine_comp, ncomp, *slopefab, *crsep, crse_comp, ratio);
+    });
 }
 
 CellBilinear::~CellBilinear () {}
@@ -170,14 +174,11 @@ CellBilinear::interp (const FArrayBox&  crse,
                       const IntVect &   ratio,
                       const Geometry& /*crse_geom*/,
                       const Geometry& /*fine_geom*/,
-                      Vector<BCRec>&   /*bcr*/,
+                      Vector<BCRec> const& /*bcr*/,
                       int               actual_comp,
                       int               actual_state)
 {
     BL_PROFILE("CellBilinear::interp()");
-#if (AMREX_SPACEDIM == 3)
-    amrex::Error("interp: not implemented");
-#endif
     //
     // Set up to call FORTRAN.
     //
@@ -265,7 +266,7 @@ CellConservativeLinear::interp (const FArrayBox& crse,
                                 const IntVect&   ratio,
                                 const Geometry&  crse_geom,
                                 const Geometry&  fine_geom,
-                                Vector<BCRec>&   bcr,
+                                Vector<BCRec> const& bcr,
                                 int              /*actual_comp*/,
                                 int              /*actual_state*/)
 {
@@ -274,10 +275,15 @@ CellConservativeLinear::interp (const FArrayBox& crse,
 
     AMREX_ASSERT(fine.box().contains(fine_region));
 
+    FArrayBox const* crsep = &crse;
+    FArrayBox* finep = &fine;
+
+    Gpu::LaunchSafeGuard lg(Gpu::isGpuPtr(crsep) && Gpu::isGpuPtr(finep));
+
     const Box& crse_region = CoarseBox(fine_region,ratio);
     const Box& cslope_bx = amrex::grow(crse_region,-1);
 
-    Gpu::AsyncArray<BCRec> async_bcr(bcr.data(), ncomp);
+    AsyncArray<BCRec> async_bcr(bcr.data(), ncomp);
     BCRec* bcrp = async_bcr.data();
 
     // component of ccfab : slopes for first compoent for x-direction
@@ -290,19 +296,13 @@ CellConservativeLinear::interp (const FArrayBox& crse,
     //      lin_lim = true : factors (one for all components) for x, y and z-direction
     //      lin_lim = false: min for every component followed by max for every component
     const int ntmp = do_linear_limiting ? (ncomp+1)*AMREX_SPACEDIM : ncomp*(AMREX_SPACEDIM+2);
-    Gpu::AsyncFab as_ccfab(cslope_bx, ntmp);
+    AsyncFab as_ccfab(cslope_bx, ntmp);
     FArrayBox* ccfab = as_ccfab.fabPtr();
 
     const Vector<Real>& vec_voff = amrex::ccinterp_compute_voff(cslope_bx, ratio, crse_geom, fine_geom);
 
-    Gpu::AsyncArray<Real> async_voff(vec_voff.data(), vec_voff.size());
+    AsyncArray<Real> async_voff(vec_voff.data(), vec_voff.size());
     Real const* voff = async_voff.data();
-
-    FArrayBox const* crsep = &crse;
-    AMREX_ASSERT(Gpu::notInLaunchRegion() || Gpu::isManaged(crsep));
-
-    FArrayBox* finep = &fine;
-    AMREX_ASSERT(Gpu::notInLaunchRegion() || Gpu::isManaged(finep));
 
     if (do_linear_limiting) {
         AMREX_LAUNCH_HOST_DEVICE_LAMBDA (cslope_bx, tbx,
@@ -317,7 +317,7 @@ CellConservativeLinear::interp (const FArrayBox& crse,
         });
     } else {
         const Box& fslope_bx = amrex::refine(cslope_bx,ratio);
-        Gpu::AsyncFab as_fafab(fslope_bx, ncomp);
+        AsyncFab as_fafab(fslope_bx, ncomp);
         FArrayBox* fafab = as_fafab.fabPtr();
 
         AMREX_LAUNCH_HOST_DEVICE_LAMBDA (cslope_bx, tbx,
@@ -378,7 +378,7 @@ CellQuadratic::interp (const FArrayBox& crse,
                        const IntVect&   ratio,
                        const Geometry&  crse_geom,
                        const Geometry&  fine_geom,
-                       Vector<BCRec>&    bcr,
+                       Vector<BCRec> const&  bcr,
                        int              actual_comp,
                        int              actual_state)
 {
@@ -495,17 +495,16 @@ PCInterp::interp (const FArrayBox& crse,
                   const IntVect&   ratio,
                   const Geometry& /*crse_geom*/,
                   const Geometry& /*fine_geom*/,
-                  Vector<BCRec>&   /*bcr*/,
+                  Vector<BCRec> const& /*bcr*/,
                   int               /*actual_comp*/,
                   int               /*actual_state*/)
 {
     BL_PROFILE("PCInterp::interp()");
 
     FArrayBox const* crsep = &crse;
-    AMREX_ASSERT(Gpu::notInLaunchRegion() || Gpu::isManaged(crsep));
-
     FArrayBox* finep = &fine;
-    AMREX_ASSERT(Gpu::notInLaunchRegion() || Gpu::isManaged(finep));
+
+    Gpu::LaunchSafeGuard lg(Gpu::isGpuPtr(crsep) && Gpu::isGpuPtr(finep));
 
     AMREX_LAUNCH_HOST_DEVICE_LAMBDA (fine_region, tbx,
     {
@@ -545,7 +544,7 @@ CellConservativeProtected::interp (const FArrayBox& crse,
                                    const IntVect&   ratio,
                                    const Geometry&  crse_geom,
                                    const Geometry&  fine_geom,
-                                   Vector<BCRec>&    bcr,
+                                   Vector<BCRec> const&  bcr,
                                    int              actual_comp,
                                    int              actual_state)
 {
@@ -554,10 +553,15 @@ CellConservativeProtected::interp (const FArrayBox& crse,
 
     AMREX_ASSERT(fine.box().contains(fine_region));
 
+    FArrayBox const* crsep = &crse;
+    FArrayBox* finep = &fine;
+
+    Gpu::LaunchSafeGuard lg(Gpu::isGpuPtr(crsep) && Gpu::isGpuPtr(finep));
+
     const Box& crse_region = CoarseBox(fine_region,ratio);
     const Box& cslope_bx = amrex::grow(crse_region,-1);
 
-    Gpu::AsyncArray<BCRec> async_bcr(bcr.data(), ncomp);
+    AsyncArray<BCRec> async_bcr(bcr.data(), ncomp);
     BCRec* bcrp = async_bcr.data();
 
     // component of ccfab : slopes for first compoent for x-direction
@@ -569,19 +573,13 @@ CellConservativeProtected::interp (const FArrayBox& crse,
     // then followed by
     //                      factors (one for all components) for x, y and z-direction
     const int ntmp = (ncomp+1)*AMREX_SPACEDIM;
-    Gpu::AsyncFab as_ccfab(cslope_bx, ntmp);
+    AsyncFab as_ccfab(cslope_bx, ntmp);
     FArrayBox* ccfab = as_ccfab.fabPtr();
 
     const Vector<Real>& vec_voff = amrex::ccinterp_compute_voff(cslope_bx, ratio, crse_geom, fine_geom);
 
-    Gpu::AsyncArray<Real> async_voff(vec_voff.data(), vec_voff.size());
+    AsyncArray<Real> async_voff(vec_voff.data(), vec_voff.size());
     Real const* voff = async_voff.data();
-
-    FArrayBox const* crsep = &crse;
-    AMREX_ASSERT(Gpu::notInLaunchRegion() || Gpu::isManaged(crsep));
-
-    FArrayBox* finep = &fine;
-    AMREX_ASSERT(Gpu::notInLaunchRegion() || Gpu::isManaged(finep));
 
     AMREX_LAUNCH_HOST_DEVICE_LAMBDA (cslope_bx, tbx,
     {
@@ -722,7 +720,7 @@ CellConservativeQuartic::interp (const FArrayBox&  crse,
 				 const IntVect&    ratio,
 				 const Geometry&   /* crse_geom */,
 				 const Geometry&   /* fine_geom */,
-				 Vector<BCRec>&     bcr,
+				 Vector<BCRec> const&   bcr,
 				 int               actual_comp,
 				 int               actual_state)
 {

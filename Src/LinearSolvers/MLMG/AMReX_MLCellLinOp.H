@@ -34,76 +34,63 @@ public:
     }
     virtual void update () override;
 
-protected:
+#ifdef AMREX_SOFT_PERF_COUNTERS
+    struct Counters
+    {
+        size_t smooth_n = 0;
+        size_t smooth_cell_n = 0;
+        size_t apply_n = 0;
+        size_t apply_cell_n = 0;
+        size_t restrict_n = 0;
+        size_t restrict_cell_n = 0;
+        size_t interp_n = 0;
+        size_t interp_cell_n = 0;
 
-    virtual bool isCrossStencil () const { return true; }
+        void reset () {
+            smooth_n = 0;
+            smooth_cell_n = 0;
+            apply_n = 0;
+            apply_cell_n = 0;
+            restrict_n = 0;
+            restrict_cell_n = 0;
+            interp_n = 0;
+            interp_cell_n = 0;
+        }
 
-#if (AMREX_SPACEDIM != 3)
-    struct MetricFactor {
-        MetricFactor (const BoxArray& ba, const DistributionMapping& dm,
-                      const Geometry& geom, bool null_metric);
-        const Vector<Real>& cellCenters (const MFIter& mfi) const {
-            return r_cellcenter[mfi];
+        void smooth (const MultiFab & mf) {
+            smooth_n++;
+            smooth_cell_n += mf.boxArray().numPts();
         }
-        const Vector<Real>& cellEdges (const MFIter& mfi) const {
-            return r_celledge[mfi];
+        void apply (const MultiFab & mf) {
+            apply_n++;
+            apply_cell_n += mf.boxArray().numPts();
         }
-        const Vector<Real>& invCellCenters (const MFIter& mfi) const {
-            return inv_r_cellcenter[mfi];
+        void restrict (const MultiFab & mf) {
+            restrict_n++;
+            restrict_cell_n += mf.boxArray().numPts();
         }
-        const Vector<Real>& invCellEdges (const MFIter& mfi) const {
-            return inv_r_celledge[mfi];
+        void interpolate (const MultiFab & mf) {
+            interp_n++;
+            interp_cell_n += mf.boxArray().numPts();
         }
-        LayoutData<Vector<Real> > r_cellcenter;
-        LayoutData<Vector<Real> > r_celledge;
-        LayoutData<Vector<Real> > inv_r_cellcenter;
-        LayoutData<Vector<Real> > inv_r_celledge;
+
+        void print () {
+            Print() << ParallelContext::MyProcSub() << ": perf: MLCellLinOp::smooth()        called " << smooth_n
+                    << " times on " << smooth_cell_n << " cells total" << std::endl;
+            Print() << ParallelContext::MyProcSub() << ": perf: MLCellLinOp::apply()         called " << apply_n
+                    << " times on " << apply_cell_n << " cells total" << std::endl;
+            Print() << ParallelContext::MyProcSub() << ": perf: MLCellLinOp::restriction()   called " << restrict_n
+                    << " times on " << restrict_cell_n << " cells total" << std::endl;
+            Print() << ParallelContext::MyProcSub() << ": perf: MLCellLinOp::interpolation() called " << interp_n
+                    << " times on " << interp_cell_n << " cells total" << std::endl;
+        }
     };
-    Vector<Vector<std::unique_ptr<MetricFactor> > > m_metric_factor;
+
+    // software counters for performance analysis
+    static Counters perf_counters;
 #endif
 
-    Vector<std::unique_ptr<MLMGBndry> >   m_bndry_sol;
-    Vector<std::unique_ptr<BndryRegister> > m_crse_sol_br;
-
-    Vector<std::unique_ptr<MLMGBndry> > m_bndry_cor;
-    Vector<std::unique_ptr<BndryRegister> > m_crse_cor_br;
-
-    // In case of agglomeration, coarse MG grids on amr level 0 are
-    // not simply coarsened from fine MG grids.  So we need to build
-    // bcond and bcloc for each MG level.
-    using RealTuple = Array<Real,2*BL_SPACEDIM>;
-    using BCTuple   = Array<BoundCond,2*BL_SPACEDIM>;
-    class BndryCondLoc
-    {
-    public:
-        BndryCondLoc (const BoxArray& ba, const DistributionMapping& dm);
-        void setLOBndryConds (const Geometry& geom, const Real* dx,
-                              const Array<BCType,AMREX_SPACEDIM>& lobc,
-                              const Array<BCType,AMREX_SPACEDIM>& hibc,
-                              int ratio, const RealVect& a_loc);
-        const BCTuple& bndryConds (const MFIter& mfi) const {
-            return bcond[mfi];
-        }
-        const RealTuple& bndryLocs (const MFIter& mfi) const {
-            return bcloc[mfi];
-        }
-    private:
-        LayoutData<BCTuple>   bcond;
-        LayoutData<RealTuple> bcloc;
-    };
-    Vector<Vector<std::unique_ptr<BndryCondLoc> > > m_bcondloc;
-
-    // used to save interpolation coefficients of the first interior cells
-    mutable Vector<Vector<BndryRegister> > m_undrrelxr;
-
-    // boundary cell flags for covered, not_covered, outside_domain
-    Vector<Vector<Array<MultiMask,2*AMREX_SPACEDIM> > > m_maskvals;
-
-    mutable Vector<YAFluxRegister> m_fluxreg;
-
-    //
-    // functions
-    //
+    virtual bool isCrossStencil () const { return true; }
 
     void updateSolBC (int amrlev, const MultiFab& crse_bcdata) const;
     void updateCorBC (int amrlev, const MultiFab& crse_bcdata) const;
@@ -126,7 +113,7 @@ protected:
                          bool skip_fillboundary=false) const final override;
 
     virtual void solutionResidual (int amrlev, MultiFab& resid, MultiFab& x, const MultiFab& b,
-                                   const MultiFab* crse_bcdata=nullptr) final override;
+                                   const MultiFab* crse_bcdata=nullptr) override;
 
     virtual void correctionResidual (int amrlev, int mglev, MultiFab& resid, MultiFab& x, const MultiFab& b,
                                      BCMode bc_mode, const MultiFab* crse_bcdata=nullptr) final override;
@@ -153,6 +140,78 @@ protected:
     virtual void FFlux (int amrlev, const MFIter& mfi,
                         const Array<FArrayBox*,AMREX_SPACEDIM>& flux,
                         const FArrayBox& sol, Location loc, const int face_only=0) const = 0;
+
+protected:
+
+#if (AMREX_SPACEDIM != 3)
+    struct MetricFactor {
+        MetricFactor (const BoxArray& ba, const DistributionMapping& dm,
+                      const Geometry& geom, bool null_metric);
+        const Vector<Real>& cellCenters (const MFIter& mfi) const noexcept {
+            return r_cellcenter[mfi];
+        }
+        const Vector<Real>& cellEdges (const MFIter& mfi) const noexcept {
+            return r_celledge[mfi];
+        }
+        const Vector<Real>& invCellCenters (const MFIter& mfi) const noexcept {
+            return inv_r_cellcenter[mfi];
+        }
+        const Vector<Real>& invCellEdges (const MFIter& mfi) const noexcept {
+            return inv_r_celledge[mfi];
+        }
+        LayoutData<Vector<Real> > r_cellcenter;
+        LayoutData<Vector<Real> > r_celledge;
+        LayoutData<Vector<Real> > inv_r_cellcenter;
+        LayoutData<Vector<Real> > inv_r_celledge;
+    };
+    Vector<Vector<std::unique_ptr<MetricFactor> > > m_metric_factor;
+#endif
+
+    Vector<std::unique_ptr<MLMGBndry> >   m_bndry_sol;
+    Vector<std::unique_ptr<BndryRegister> > m_crse_sol_br;
+
+    Vector<std::unique_ptr<MLMGBndry> > m_bndry_cor;
+    Vector<std::unique_ptr<BndryRegister> > m_crse_cor_br;
+
+    // In case of agglomeration, coarse MG grids on amr level 0 are
+    // not simply coarsened from fine MG grids.  So we need to build
+    // bcond and bcloc for each MG level.
+    using RealTuple = Array<Real,2*BL_SPACEDIM>;
+    using BCTuple   = Array<BoundCond,2*BL_SPACEDIM>;
+    class BndryCondLoc
+    {
+    public:
+        BndryCondLoc (const BoxArray& ba, const DistributionMapping& dm, int ncomp);
+        void setLOBndryConds (const Geometry& geom, const Real* dx,
+                              const Vector<Array<BCType,AMREX_SPACEDIM> >& lobc,
+                              const Vector<Array<BCType,AMREX_SPACEDIM> >& hibc,
+                              int ratio, const RealVect& a_loc);
+        const Vector<BCTuple>& bndryConds (const MFIter& mfi) const noexcept {
+            return bcond[mfi];
+        }
+        const Vector<RealTuple>& bndryLocs (const MFIter& mfi) const noexcept {
+            return bcloc[mfi];
+        }
+        const BCTuple& bndryConds (const MFIter& mfi, int icomp) const noexcept {
+            return bcond[mfi][icomp];
+        }
+        const RealTuple& bndryLocs (const MFIter& mfi, int icomp) const noexcept {
+            return bcloc[mfi][icomp];
+        }
+    private:
+        LayoutData<Vector<BCTuple> >   bcond;
+        LayoutData<Vector<RealTuple> > bcloc;
+        int m_ncomp;
+    };
+    Vector<Vector<std::unique_ptr<BndryCondLoc> > > m_bcondloc;
+
+    // used to save interpolation coefficients of the first interior cells
+    mutable Vector<Vector<BndryRegister> > m_undrrelxr;
+
+    // boundary cell flags for covered, not_covered, outside_domain
+    Vector<Vector<Array<MultiMask,2*AMREX_SPACEDIM> > > m_maskvals;
+
+    mutable Vector<YAFluxRegister> m_fluxreg;
 
 private:
 

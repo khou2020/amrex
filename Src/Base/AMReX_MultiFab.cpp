@@ -5,12 +5,14 @@
 #include <iomanip>
 #include <map>
 #include <limits>
+#include <cfloat>
 
 #include <AMReX_BLassert.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_BLProfiler.H>
 #include <AMReX_iMultiFab.H>
+#include <AMReX_FabArrayUtility.H>
 
 #ifdef BL_MEM_PROFILING
 #include <AMReX_MemProfiler.H>
@@ -83,7 +85,7 @@ MultiFab::Add (MultiFab&       dst,
 	       int             numcomp,
 	       int             nghost)
 {
-    Add(dst,src,srccomp,dstcomp,numcomp,IntVect(nghost));
+    amrex::Add(dst,src,srccomp,dstcomp,numcomp,nghost);
 }
 
 void
@@ -100,23 +102,7 @@ MultiFab::Add (MultiFab&       dst,
 
     BL_PROFILE("MultiFab::Add()");
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(dst,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox const* srcFab = src.fabPtr(mfi);
-        FArrayBox      * dstFab = dst.fabPtr(mfi);
-
-        if (bx.ok())
-        {
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-            {
-                dstFab->plus(*srcFab, tbx, tbx, srccomp, dstcomp, numcomp);
-            });
-        }
-    }
+    amrex::Add(dst, src, srccomp, dstcomp, numcomp, nghost);
 }
 
 void
@@ -127,7 +113,7 @@ MultiFab::Copy (MultiFab&       dst,
                 int             numcomp,
                 int             nghost)
 {
-    Copy(dst,src,srccomp,dstcomp,numcomp,IntVect(nghost));
+    amrex::Copy(dst,src,srccomp,dstcomp,numcomp,IntVect(nghost));
 }
 
 void
@@ -143,24 +129,8 @@ MultiFab::Copy (MultiFab&       dst,
     BL_ASSERT(dst.nGrowVect().allGE(nghost));
 
     BL_PROFILE("MultiFab::Copy()");
-
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(dst,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox const* srcFab = src.fabPtr(mfi);
-        FArrayBox      * dstFab = dst.fabPtr(mfi);
-
-        if (bx.ok())
-        {
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-            {
-                dstFab->copy(*srcFab, tbx, srccomp, tbx, dstcomp, numcomp);
-            });
-        }
-    }
+    
+    amrex::Copy(dst,src,srccomp,dstcomp,numcomp,nghost);
 }
 
 
@@ -215,23 +185,7 @@ MultiFab::Subtract (MultiFab&       dst,
 
     BL_PROFILE("MultiFab::Subtract()");
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(dst,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox const* srcFab = src.fabPtr(mfi);
-        FArrayBox      * dstFab = dst.fabPtr(mfi);
-
-        if (bx.ok())
-        {
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-            {
-                dstFab->minus(*srcFab, tbx, tbx, srccomp, dstcomp, numcomp);
-            });
-        }
-    }
+    amrex::Subtract(dst,src,srccomp,dstcomp,numcomp,nghost);
 }
 
 void
@@ -259,23 +213,7 @@ MultiFab::Multiply (MultiFab&       dst,
 
     BL_PROFILE("MultiFab::Multiply()");
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(dst,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox const* srcFab = src.fabPtr(mfi);
-        FArrayBox      * dstFab = dst.fabPtr(mfi);
-
-        if (bx.ok())
-        {
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-            {
-                dstFab->mult(*srcFab, tbx, tbx, srccomp, dstcomp, numcomp);
-            });
-        }
-    }
+    amrex::Multiply(dst,src,srccomp,dstcomp,numcomp,nghost);
 }
 
 void
@@ -303,23 +241,7 @@ MultiFab::Divide (MultiFab&       dst,
 
     BL_PROFILE("MultiFab::Divide()");
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(dst,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox const* srcFab = src.fabPtr(mfi);
-        FArrayBox      * dstFab = dst.fabPtr(mfi);
-
-        if (bx.ok())
-        {
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-            {
-                dstFab->divide(*srcFab, tbx, tbx, srccomp, dstcomp, numcomp);
-            });
-        }
-    }
+    amrex::Divide(dst,src,srccomp,dstcomp,numcomp,nghost);
 }
 
 void
@@ -345,12 +267,11 @@ MultiFab::Saxpy (MultiFab&       dst,
         const Box& bx = mfi.growntilebox(nghost);
 
         if (bx.ok()) {
-            FArrayBox const* sfab = src.fabPtr(mfi);
-            FArrayBox      * dfab = dst.fabPtr(mfi);
-
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
+            auto const sfab = src.array(mfi);
+            auto       dfab = dst.array(mfi);
+            AMREX_HOST_DEVICE_FOR_4D ( bx, numcomp, i, j, k, n,
             {
-                dfab->saxpy(a, *sfab, tbx, tbx, srccomp, dstcomp, numcomp);
+                dfab(i,j,k,dstcomp+n) += a * sfab(i,j,k,srccomp+n);
             });
         }
     }
@@ -377,14 +298,12 @@ MultiFab::Xpay (MultiFab&       dst,
     for (MFIter mfi(dst,TilingIfNotGPU()); mfi.isValid(); ++mfi)
     {
         const Box& bx = mfi.growntilebox(nghost);
-
         if (bx.ok()) {
-            FArrayBox const* sfab = src.fabPtr(mfi);
-            FArrayBox      * dfab = dst.fabPtr(mfi);
-
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
+            auto const sfab = src.array(mfi);
+            auto       dfab = dst.array(mfi);
+            AMREX_HOST_DEVICE_FOR_4D ( bx, numcomp, i, j, k, n,
             {
-                dfab->xpay(a, *sfab, tbx, tbx, srccomp, dstcomp, numcomp);
+                dfab(i,j,k,n+dstcomp) = sfab(i,j,k,n+srccomp) + a * dfab(i,j,k,n+dstcomp);
             });
         }
     }
@@ -418,12 +337,12 @@ MultiFab::LinComb (MultiFab&       dst,
         const Box& bx = mfi.growntilebox(nghost);
 	
         if (bx.ok()) {
-            FArrayBox const* xfab =   x.fabPtr(mfi);
-            FArrayBox const* yfab =   y.fabPtr(mfi);
-            FArrayBox      * dfab = dst.fabPtr(mfi);
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
+            auto const xfab =   x.array(mfi);
+            auto const yfab =   y.array(mfi);
+            auto       dfab = dst.array(mfi);
+            AMREX_HOST_DEVICE_FOR_4D ( bx, numcomp, i, j, k, n,
             {
-                dfab->linComb(*xfab,tbx,xcomp,*yfab,tbx,ycomp,a,b,tbx,dstcomp,numcomp);
+                dfab(i,j,k,dstcomp+n) = a*xfab(i,j,k,xcomp+n) + b*yfab(i,j,k,ycomp+n);
             });
         }
     }
@@ -453,15 +372,13 @@ MultiFab::AddProduct (MultiFab&       dst,
     for (MFIter mfi(dst,TilingIfNotGPU()); mfi.isValid(); ++mfi)
     {
         const Box& bx = mfi.growntilebox(nghost);
-	
         if (bx.ok()) {
-            FArrayBox const* s1fab = src1.fabPtr(mfi);
-            FArrayBox const* s2fab = src2.fabPtr(mfi);
-            FArrayBox      *  dfab =  dst.fabPtr(mfi);
-
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
+            auto const s1fab = src1.array(mfi);
+            auto const s2fab = src2.array(mfi);
+            auto        dfab =  dst.array(mfi);
+            AMREX_HOST_DEVICE_FOR_4D ( bx, numcomp, i, j, k, n,
             {
-                dfab->addproduct(tbx, dstcomp, numcomp, *s1fab, comp1, *s2fab, comp2);
+                dfab(i,j,k,n+dstcomp) += s1fab(i,j,k,n+comp1) * s2fab(i,j,k,n+comp2);
             });
         }
     }
@@ -547,7 +464,7 @@ MultiFab::Finalize ()
     initialized = false;
 }
 
-MultiFab::MultiFab ()
+MultiFab::MultiFab () noexcept
 {
 #ifdef BL_MEM_PROFILING
     ++num_multifabs;
@@ -607,7 +524,7 @@ MultiFab::~MultiFab()
 }
 
 void
-MultiFab::operator= (const Real& r)
+MultiFab::operator= (Real r)
 {
     setVal(r);
 }
@@ -654,13 +571,22 @@ bool
 MultiFab::contains_nan (int scomp,
                         int ncomp,
                         int ngrow,
-			bool local) const
+                        bool local) const
+{
+    return contains_nan(scomp, ncomp, IntVect(ngrow), local);
+}
+
+bool 
+MultiFab::contains_nan (int scomp,
+                        int ncomp,
+                        const IntVect& ngrow,
+                        bool local) const
 {
     // TODO GPU -- CHECK
     BL_ASSERT(scomp >= 0);
     BL_ASSERT(scomp + ncomp <= nComp());
     BL_ASSERT(ncomp >  0 && ncomp <= nComp());
-    BL_ASSERT(ngrow >= 0 && ngrow <= nGrow());
+    BL_ASSERT(IntVect::TheZeroVector().allLE(ngrow) && ngrow.allLE(nGrowVect()));
 
     bool r = amrex::ReduceLogicalOr(*this, ngrow,
     [=] AMREX_GPU_HOST_DEVICE (Box const& bx, FArrayBox const& fab) -> bool
@@ -668,8 +594,9 @@ MultiFab::contains_nan (int scomp,
         return fab.contains_nan(bx,scomp,ncomp);
     });
 
-    if (!local)
-	ParallelAllReduce::Or(r, ParallelContext::CommunicatorSub());
+    if (!local) {
+        ParallelAllReduce::Or(r, ParallelContext::CommunicatorSub());
+    }
 
     return r;
 }
@@ -677,20 +604,20 @@ MultiFab::contains_nan (int scomp,
 bool 
 MultiFab::contains_nan (bool local) const
 {
-    return contains_nan(0,nComp(),nGrow(),local);
+    return contains_nan(0,nComp(),nGrowVect(),local);
 }
 
-bool 
+bool
 MultiFab::contains_inf (int scomp,
                         int ncomp,
-                        int ngrow,
+                        IntVect const& ngrow,
 			bool local) const
 {
     // TODO GPU -- CHECK
     BL_ASSERT(scomp >= 0);
     BL_ASSERT(scomp + ncomp <= nComp());
     BL_ASSERT(ncomp >  0 && ncomp <= nComp());
-    BL_ASSERT(ngrow >= 0 && ngrow <= nGrow());
+    BL_ASSERT(IntVect::TheZeroVector().allLE(ngrow) && ngrow.allLE(nGrowVect()));
 
     bool r = amrex::ReduceLogicalOr(*this, ngrow,
     [=] AMREX_GPU_HOST_DEVICE (Box const& bx, FArrayBox const& fab) -> bool
@@ -705,25 +632,34 @@ MultiFab::contains_inf (int scomp,
 }
 
 bool 
+MultiFab::contains_inf (int scomp,
+                        int ncomp,
+                        int ngrow,
+			bool local) const
+{
+    return contains_inf(0,ncomp,IntVect(ngrow),local);
+}
+
+bool 
 MultiFab::contains_inf (bool local) const
 {
     return contains_inf(0,nComp(),nGrow(),local);
 }
 
 bool 
-MultiFab::is_nodal () const
+MultiFab::is_nodal () const noexcept
 {
     return boxArray().ixType().nodeCentered();
 }
 
 bool 
-MultiFab::is_nodal (int dir) const
+MultiFab::is_nodal (int dir) const noexcept
 {
     return boxArray().ixType().nodeCentered(dir);
 }
 
 bool 
-MultiFab::is_cell_centered () const
+MultiFab::is_cell_centered () const noexcept
 {
     return boxArray().ixType().cellCentered();
 }
@@ -762,7 +698,13 @@ MultiFab::min (const Box& region,
         if (b.ok()) {
             return fab.min(b,comp);
         } else {
+#if !defined(__CUDACC__) || (__CUDACC_VER_MAJOR__ != 9) || (__CUDACC_VER_MINOR__ != 2)
             return std::numeric_limits<Real>::max();
+#elif defined(BL_USE_DOUBLE)
+            return DBL_MAX;
+#else
+            return FLT_MAX;
+#endif
         }
     });
 
@@ -807,7 +749,13 @@ MultiFab::max (const Box& region,
         if (b.ok()) {
             return fab.max(b,comp);
         } else {
+#if !defined(__CUDACC__) || (__CUDACC_VER_MAJOR__ != 9) || (__CUDACC_VER_MINOR__ != 2)
             return std::numeric_limits<Real>::lowest();
+#elif defined(BL_USE_DOUBLE)
+            return -DBL_MAX;
+#else
+            return -FLT_MAX;
+#endif
         }
     });
 
@@ -1183,18 +1131,7 @@ MultiFab::plus (Real val,
     BL_ASSERT(comp+num_comp <= n_comp);
     BL_ASSERT(num_comp > 0);
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox* fab = this->fabPtr(mfi);
-        AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-        {
-            fab->plus(val, tbx, comp, num_comp);
-        });
-    }
+    FabArray<FArrayBox>::plus(val, comp, num_comp, nghost);
 }
 
 void
@@ -1208,20 +1145,7 @@ MultiFab::plus (Real       val,
     BL_ASSERT(comp+num_comp <= n_comp);
     BL_ASSERT(num_comp > 0);
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& b = mfi.growntilebox(nghost) & region;
-        FArrayBox* fab = this->fabPtr(mfi);
-        if (b.ok()) {
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( b, tbx,
-            {
-                fab->plus(val, tbx, comp, num_comp);
-            });
-        }
-    }
+    FabArray<FArrayBox>::plus(val,region,comp,num_comp,nghost);
 }
 
 void
@@ -1243,18 +1167,7 @@ MultiFab::mult (Real val,
     BL_ASSERT(comp+num_comp <= n_comp);
     BL_ASSERT(num_comp > 0);
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox* fab = this->fabPtr(mfi);
-        AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-        {
-            fab->mult(val, tbx, comp, num_comp);
-        });
-    }
+    FabArray<FArrayBox>::mult(val,comp,num_comp,nghost);
 }
 
 void
@@ -1268,21 +1181,7 @@ MultiFab::mult (Real       val,
     BL_ASSERT(comp+num_comp <= n_comp);
     BL_ASSERT(num_comp > 0);
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& b = mfi.growntilebox(nghost) & region;
-
-        if (b.ok()) {
-            FArrayBox* fab = this->fabPtr(mfi);
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( b, tbx,
-            {
-                fab->mult(val, tbx, comp, num_comp);
-            });
-        }
-    }
+    FabArray<FArrayBox>::mult(val,region,comp,num_comp,nghost);
 }
 
 void
@@ -1295,18 +1194,7 @@ MultiFab::invert (Real numerator,
     BL_ASSERT(comp+num_comp <= n_comp);
     BL_ASSERT(num_comp > 0);
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox* fab = this->fabPtr(mfi);
-        AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-        {
-            fab->invert(numerator, tbx, comp, num_comp);
-        });
-    }
+    FabArray<FArrayBox>::invert(numerator,comp,num_comp,nghost);
 }
 
 void
@@ -1320,21 +1208,7 @@ MultiFab::invert (Real       numerator,
     BL_ASSERT(comp+num_comp <= n_comp);
     BL_ASSERT(num_comp > 0);
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& b = mfi.growntilebox(nghost) & region;
-
-        if (b.ok()) {
-            FArrayBox* fab = this->fabPtr(mfi);
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( b, tbx,
-            {
-                fab->invert(numerator, tbx, comp, num_comp);
-            });
-        }
-    }
+    FabArray<FArrayBox>::invert(numerator,region,comp,num_comp,nghost);
 }
 
 void
@@ -1345,18 +1219,7 @@ MultiFab::negate (int comp,
     BL_ASSERT(nghost >= 0 && nghost <= n_grow.min());
     BL_ASSERT(comp+num_comp <= n_comp);
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.growntilebox(nghost);
-        FArrayBox* fab = this->fabPtr(mfi);
-        AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-        {
-            fab->negate(tbx, comp, num_comp);
-        });
-    }
+    FabArray<FArrayBox>::mult(-1., comp, num_comp, nghost);
 }
 
 void
@@ -1368,25 +1231,11 @@ MultiFab::negate (const Box& region,
     BL_ASSERT(nghost >= 0 && nghost <= n_grow.min());
     BL_ASSERT(comp+num_comp <= n_comp);
 
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& b = mfi.growntilebox(nghost) & region;
-
-        if (b.ok()) {
-            FArrayBox* fab = this->fabPtr(mfi);
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA( b, tbx,
-            {
-                fab->negate(tbx, comp, num_comp);
-            });
-        }
-    }
+    FabArray<FArrayBox>::mult(-1.,region,comp,num_comp,nghost);
 }
 
 void
-MultiFab::SumBoundary (int scomp, int ncomp, const Periodicity& period)
+MultiFab::SumBoundary (int scomp, int ncomp, IntVect const& nghost, const Periodicity& period)
 {
     BL_PROFILE("MultiFab::SumBoundary()");
 
@@ -1394,19 +1243,25 @@ MultiFab::SumBoundary (int scomp, int ncomp, const Periodicity& period)
 
     if (boxArray().ixType().cellCentered()) {
 	// Self copy is safe only for cell-centered MultiFab
-	this->copy(*this,scomp,scomp,ncomp,n_grow,IntVect::TheZeroVector(),period,FabArrayBase::ADD);
+	this->copy(*this,scomp,scomp,ncomp,n_grow,nghost,period,FabArrayBase::ADD);
     } else {
-	MultiFab tmp(boxArray(), DistributionMap(), ncomp, n_grow, MFInfo(), Factory());
+	MultiFab tmp(boxArray(), DistributionMap(), ncomp, n_grow, MFInfo().SetDeviceFab(false), Factory());
 	MultiFab::Copy(tmp, *this, scomp, 0, ncomp, n_grow);
-	this->setVal(0.0, scomp, ncomp, 0);
-	this->copy(tmp,0,scomp,ncomp,n_grow,IntVect::TheZeroVector(),period,FabArrayBase::ADD);
+	this->setVal(0.0, scomp, ncomp, nghost);
+	this->copy(tmp,0,scomp,ncomp,n_grow,nghost,period,FabArrayBase::ADD);
     }
+}
+
+void
+MultiFab::SumBoundary (int scomp, int ncomp, const Periodicity& period)
+{
+    SumBoundary(scomp, ncomp, IntVect(0), period);
 }
 
 void
 MultiFab::SumBoundary (const Periodicity& period)
 {
-    SumBoundary(0, n_comp, period);
+    SumBoundary(0, n_comp, IntVect(0), period);
 }
 
 std::unique_ptr<MultiFab>
@@ -1451,48 +1306,7 @@ MultiFab::OverlapMask (const Periodicity& period) const
 std::unique_ptr<iMultiFab>
 MultiFab::OwnerMask (const Periodicity& period) const
 {
-    //TODO GPU????
-    BL_PROFILE("MultiFab::OwnerMask()");
-
-    const BoxArray& ba = boxArray();
-    const DistributionMapping& dm = DistributionMap();
-
-    const int owner = 1;
-    const int nonowner = 0;
-
-    std::unique_ptr<iMultiFab> p{new iMultiFab(ba,dm,1,0, MFInfo(),
-                                               DefaultFabFactory<IArrayBox>())};
-    p->setVal(owner);
-
-    const std::vector<IntVect>& pshifts = period.shiftIntVect();
-
-#ifdef _OPENMP
-#pragma omp parallel
-#endif
-    {
-        std::vector< std::pair<int,Box> > isects;
-        
-        for (MFIter mfi(*p); mfi.isValid(); ++mfi)
-        {
-            IArrayBox& fab = (*p)[mfi];
-            const Box& bx = fab.box();
-            const int i = mfi.index();
-            for (const auto& iv : pshifts)
-            {
-                ba.intersections(bx+iv, isects);                    
-                for (const auto& is : isects)
-                {
-                    const int oi = is.first;
-                    const Box& obx = is.second;
-                    if ((oi < i) || (oi == i && iv < IntVect::TheZeroVector())) {
-                        fab.setVal(nonowner, obx-iv, 0, 1);
-                    }
-                }
-            }
-        }
-    }
-
-    return p;
+    return amrex::OwnerMask(*this, period);
 }
 
 void
@@ -1537,38 +1351,18 @@ MultiFab::OverrideSync (const Periodicity& period)
 void
 MultiFab::OverrideSync (const iMultiFab& msk, const Periodicity& period)
 {
-    BL_PROFILE("MultiFab::OverrideSync()");
-
-    if (ixType().cellCentered()) return;
-    
-    const int ncomp = nComp();
-
-#ifdef _OPENMP
-#pragma omp parallel if (Gpu::notInLaunchRegion())
-#endif
-    for (MFIter mfi(*this,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-    {
-        const Box& bx = mfi.tilebox();
-        FArrayBox* fab = this->fabPtr(mfi);
-        IArrayBox const* ifab = msk.fabPtr(mfi);
-        AMREX_LAUNCH_HOST_DEVICE_LAMBDA( bx, tbx,
-        {
-            fab->setValIfNot(0.0, tbx, *ifab, 0, ncomp);
-        });
-    }
-    
-    MultiFab tmpmf(boxArray(), DistributionMap(), ncomp, 0, MFInfo(), Factory());
-    tmpmf.setVal(0.0);
-    tmpmf.ParallelCopy(*this, period, FabArrayBase::ADD);
-
-    MultiFab::Copy(*this, tmpmf, 0, 0, ncomp, 0);
+    amrex::OverrideSync(*this, msk, period);
 }
 
 void
 FillBoundary (Vector<MultiFab*> const& mf, const Periodicity& period)
 {
-    Vector<FabArray<FArrayBox>*> fa{mf.begin(),mf.end()};
-    FillBoundary(fa,period);
+    for (auto x : mf) {
+        x->FillBoundary(period);
+    }
+// The following is actually slower on summit
+//    Vector<FabArray<FArrayBox>*> fa{mf.begin(),mf.end()};
+//    FillBoundary(fa,period);
 }
 
 }

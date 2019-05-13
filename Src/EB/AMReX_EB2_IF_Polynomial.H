@@ -1,6 +1,7 @@
 #ifndef AMREX_EB2_IF_POLYNOMIAL_H_
 #define AMREX_EB2_IF_POLYNOMIAL_H_
 
+#include <AMReX_EB2_IF_Base.H>
 #include <AMReX_Array.H>
 #include <AMReX_Vector.H>
 #include <AMReX_IntVect.H>
@@ -19,10 +20,10 @@ class PolyTerm
 {
 public:
 
-    // Coefficient of this polynomial term
+    //! Coefficient of this polynomial term
     Real coef;
 
-    // Powers of this polynomial term
+    //! Powers of this polynomial term
     IntVect powers;
 };
 
@@ -32,7 +33,7 @@ class PolynomialIF
 {
 public:
 
-    // inside: is the fluid inside the ellipsoid?
+    //! inside: is the fluid inside the ellipsoid?
     PolynomialIF (const Vector<PolyTerm> & a_polynomial, bool a_inside = true)
         : m_polynomial(a_polynomial), m_inside(a_inside),
           m_sign( a_inside ? 1.0 : -1.0 )

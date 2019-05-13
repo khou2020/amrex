@@ -69,7 +69,7 @@ named methods. For the “extra” real and integer data, you can use the
       p.rdata(1) = 5.0;
 
       // and likewise for p.idata(0);
-      p.rdata(0) = 17;
+      p.idata(0) = 17;
       p.idata(1) = -64;
 
 .. _sec:Particles:ParticleContainer:
@@ -509,7 +509,7 @@ and neighbor particles into a Fortran subroutine, as follows:
             AoS& particles = pti.GetArrayOfStructs();
             int Np = particles.size();
             PairIndex index(pti.index(), pti.LocalTileIndex());
-            int Nn = neighbors[index].size() / pdata_size;
+            int Nn = neighbors[index].size();
             amrex_compute_forces(particles.data(), &Np,
                                  neighbors[index].dataPtr(), &Nn);
         }

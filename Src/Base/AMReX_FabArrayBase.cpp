@@ -13,6 +13,7 @@
 #endif
 
 #ifdef AMREX_USE_EB
+#include <AMReX_EB2.H>
 #include <AMReX_EBFabFactory.H>
 #endif
 
@@ -21,9 +22,7 @@ namespace amrex {
 //
 // Set default values in Initialize()!!!
 //
-bool    FabArrayBase::do_async_sends;
 int     FabArrayBase::MaxComp;
-int     FabArrayBase::use_cuda_aware_mpi;
 
 #if defined(AMREX_USE_GPU) && defined(AMREX_USE_GPU_PRAGMA)
 
@@ -86,7 +85,6 @@ FabArrayBase::Initialize ()
     //
     // Set default values here!!!
     //
-    FabArrayBase::do_async_sends    = true;
     FabArrayBase::MaxComp           = 25;
 
     ParmParse pp("fabarray");
@@ -109,21 +107,15 @@ FabArrayBase::Initialize ()
     }
 
     pp.query("maxcomp",             FabArrayBase::MaxComp);
-    pp.query("do_async_sends",      FabArrayBase::do_async_sends);
 
-    if (MaxComp < 1)
+    if (MaxComp < 1) {
         MaxComp = 1;
+    }
 
-#ifdef AMREX_USE_CUDA
-    FabArrayBase::use_cuda_aware_mpi = 1;
-    pp.query("use_cuda_aware_mpi", FabArrayBase::use_cuda_aware_mpi);
-#else
-    FabArrayBase::use_cuda_aware_mpi = 0;
-#endif
-    if (FabArrayBase::use_cuda_aware_mpi) {
+    if (ParallelDescriptor::UseGpuAwareMpi()) {
         the_fa_arena = The_Device_Arena();
     } else {
-        the_fa_arena = new BArena;
+        the_fa_arena = The_Pinned_Arena();
     }
 
     amrex::ExecOnFinalize(FabArrayBase::Finalize);
@@ -206,7 +198,7 @@ FabArrayBase::clear ()
 }
 
 Box
-FabArrayBase::fabbox (int K) const
+FabArrayBase::fabbox (int K) const noexcept
 {
     return amrex::grow(boxarray[K], n_grow);
 }
@@ -368,7 +360,7 @@ FabArrayBase::CPC::define (const BoxArray& ba_dst, const DistributionMapping& dm
 
 	auto& recv_tags = *m_RcvTags;
 
-	BaseFab<int> localtouch, remotetouch;
+	BaseFab<int,CpuDataAllocator<int> > localtouch, remotetouch;
 	bool check_local = false, check_remote = false;
 #if defined(_OPENMP)
 	if (omp_get_max_threads() > 1) {
@@ -681,7 +673,7 @@ FabArrayBase::FB::define_fb(const FabArrayBase& fa)
 
     auto& recv_tags = *m_RcvTags;
 
-    BaseFab<int> localtouch, remotetouch;
+    BaseFab<int,CpuDataAllocator<int> > localtouch, remotetouch;
     bool check_local = false, check_remote = false;
 #if defined(_OPENMP)
     if (omp_get_max_threads() > 1) {
@@ -888,7 +880,7 @@ FabArrayBase::FB::define_epo (const FabArrayBase& fa)
 
     auto& recv_tags = *m_RcvTags;
 
-    BaseFab<int> localtouch, remotetouch;
+    BaseFab<int,CpuDataAllocator<int> > localtouch, remotetouch;
     bool check_local = false, check_remote = false;
 #if defined(_OPENMP)
     if (omp_get_max_threads() > 1) {
@@ -1071,7 +1063,8 @@ FabArrayBase::FPinfo::FPinfo (const FabArrayBase& srcfa,
 			      const Box&          dstdomain,
 			      const IntVect&      dstng,
 			      const BoxConverter& coarsener,
-                              const Box&          cdomain)
+                              const Box&          cdomain,
+                              const EB2::IndexSpace* index_space)
     : m_srcbdk   (srcfa.getBDKey()),
       m_dstbdk   (dstfa.getBDKey()),
       m_dstdomain(dstdomain),
@@ -1080,7 +1073,6 @@ FabArrayBase::FPinfo::FPinfo (const FabArrayBase& srcfa,
       m_nuse     (0)
 { 
     BL_PROFILE("FPinfo::FPinfo()");
-
     const BoxArray& srcba = srcfa.boxArray();
     const BoxArray& dstba = dstfa.boxArray();
     BL_ASSERT(srcba.ixType() == dstba.ixType());
@@ -1099,35 +1091,40 @@ FabArrayBase::FPinfo::FPinfo (const FabArrayBase& srcfa,
 
     for (int i = 0, N = dstba.size(); i < N; ++i)
     {
-	Box bx = dstba[i];
-	bx.grow(m_dstng);
-	bx &= m_dstdomain;
+        Box bx = dstba[i];
+        bx.grow(m_dstng);
+        bx &= m_dstdomain;
 
-	BoxList leftover = srcba.complementIn(bx);
+        BoxList leftover = srcba.complementIn(bx);
 
-	bool ismybox = (dstdm[i] == myproc);
-	for (BoxList::const_iterator bli = leftover.begin(); bli != leftover.end(); ++bli)
-	{
-	    bl.push_back(m_coarsener->doit(*bli));
-	    if (ismybox) {
-		dst_boxes.push_back(*bli);
-		dst_idxs.push_back(i);
-	    }
-	    iprocs.push_back(dstdm[i]);
-	}
+        bool ismybox = (dstdm[i] == myproc);
+        for (BoxList::const_iterator bli = leftover.begin(); bli != leftover.end(); ++bli)
+        {
+            bl.push_back(m_coarsener->doit(*bli));
+            if (ismybox) {
+                dst_boxes.push_back(*bli);
+                dst_idxs.push_back(i);
+            }
+            iprocs.push_back(dstdm[i]);
+        }
     }
 
     if (!iprocs.empty()) {
-	ba_crse_patch.define(bl);
-	dm_crse_patch.define(std::move(iprocs));
+        ba_crse_patch.define(bl);
+        dm_crse_patch.define(std::move(iprocs));
 #ifdef AMREX_USE_EB
-        fact_crse_patch = makeEBFabFactory(Geometry(cdomain),
-                                           ba_crse_patch,
-                                           dm_crse_patch,
-                                           {0,0,0}, EBSupport::basic);
-#else
-        fact_crse_patch.reset(new FArrayBoxFactory());
+        if (index_space)
+        {
+            fact_crse_patch = makeEBFabFactory(index_space, Geometry(cdomain),
+                                               ba_crse_patch,
+                                               dm_crse_patch,
+                                               {0,0,0}, EBSupport::basic);
+        }
+        else
 #endif
+        {
+            fact_crse_patch.reset(new FArrayBoxFactory());
+        }
     }
 }
 
@@ -1147,11 +1144,12 @@ FabArrayBase::FPinfo::bytes () const
 
 const FabArrayBase::FPinfo&
 FabArrayBase::TheFPinfo (const FabArrayBase& srcfa,
-			 const FabArrayBase& dstfa,
-			 const Box&          dstdomain,
-			 const IntVect&      dstng,
-			 const BoxConverter& coarsener,
-                         const Box&          cdomain)
+                         const FabArrayBase& dstfa,
+                         const Box&          dstdomain,
+                         const IntVect&      dstng,
+                         const BoxConverter& coarsener,
+                         const Box&          cdomain,
+                         const EB2::IndexSpace* index_space)
 {
     BL_PROFILE("FabArrayBase::TheFPinfo()");
 
@@ -1176,7 +1174,7 @@ FabArrayBase::TheFPinfo (const FabArrayBase& srcfa,
     }
 
     // Have to build a new one
-    FPinfo* new_fpc = new FPinfo(srcfa, dstfa, dstdomain, dstng, coarsener, cdomain);
+    FPinfo* new_fpc = new FPinfo(srcfa, dstfa, dstdomain, dstng, coarsener, cdomain, index_space);
 
 #ifdef BL_MEM_PROFILING
     m_FPinfo_stats.bytes += new_fpc->bytes();
@@ -1399,9 +1397,6 @@ FabArrayBase::Finalize ()
     
     m_FA_stats = FabArrayStats();
 
-    if (!FabArrayBase::use_cuda_aware_mpi) {
-        delete the_fa_arena;
-    }
     the_fa_arena = nullptr;
 
     initialized = false;
