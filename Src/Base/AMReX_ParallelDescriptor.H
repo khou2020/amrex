@@ -459,6 +459,10 @@ namespace ParallelDescriptor
     void ReduceLongAnd (long* rvar, int cnt, int cpu);
     void ReduceLongAnd (Vector<std::reference_wrapper<long> >&& rvar, int cpu);
 
+#ifdef BL_USE_PNETCDF
+    void ReduceLonglongAnd (long long* rvar, int cnt);
+#endif
+
     // There are no color versions of reducion to specified cpu, because it could
     // be confusing what cpu means.  Is it in the global or colored communicator?
 

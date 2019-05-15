@@ -5,6 +5,7 @@
 #include <sstream>
 #include <vector>
 #include <deque>
+#include <vector>
 #include <cerrno>
 #include <algorithm>
 
@@ -905,7 +906,7 @@ VisMF::WriteHeader (const std::string &mf_name,
 
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
 long
-VisMF::WriteHeader_NC (int ncid,
+VisMF::WriteHeader_PNC (int ncid,
                        int varid,
                        const std::string &mf_name,
                        VisMF::Header     &hdr)
@@ -913,80 +914,209 @@ VisMF::WriteHeader_NC (int ncid,
     int err;
     int i;
     int mhow;
-    int dimids[5], varids[6];
+    int dimids[3], varids[6];
     MPI_Offset start[2], count[2];
     MPI_Offset putsize, putsize_old;
     char name[1024];
 
     BL_PROFILE("VisMF::WriteHeader");
 
-    ncmpi_inq_put_size(ncid, &putsize_old);
+    err = ncmpi_inq_put_size(ncid, &putsize_old);
+    if (err != NC_NOERR){
+        putsize_old = 0;
+    }
 
-    ncmpi_redef(ncid);
+    err = ncmpi_redef(ncid);
+    if (err != NC_NOERR && err != NC_EINDEFINE){
+        amrex::Error("ncmpi_redef fail");
+    }
 
     // Scalar att
-    ncmpi_put_att_int(ncid, varid, "m_var", NC_INT, 1, &(hdr.m_vers));
+    err = ncmpi_put_att_int(ncid, varid, "m_var", NC_INT, 1, &(hdr.m_vers));
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
     mhow = int(hdr.m_how);
-    ncmpi_put_att_int(ncid, varid, "m_how", NC_INT, 1, &(mhow));
-    ncmpi_put_att_int(ncid, varid, "m_ncomp", NC_INT, 1, &(hdr.m_ncomp));
-    ncmpi_put_att_int(ncid, varid, "m_ngrow", NC_INT, AMREX_SPACEDIM, hdr.m_ngrow.getVect());
+    err = ncmpi_put_att_int(ncid, varid, "m_how", NC_INT, 1, &(mhow));
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+    err = ncmpi_put_att_int(ncid, varid, "m_ncomp", NC_INT, 1, &(hdr.m_ncomp));
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+    err = ncmpi_put_att_int(ncid, varid, "m_ngrow", NC_INT, AMREX_SPACEDIM, hdr.m_ngrow.getVect());
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
 
-    // non-scalar att save in var
-    ncmpi_inq_vardimid(ncid, varid, dimids);
-    dimids[1] = dimids[AMREX_SPACEDIM + 1];
+    // Define dimensions
+    // #fab
+    sprintf(name, "%s_nfab", mf_name.c_str());
+    err = ncmpi_def_dim(ncid, name, hdr.m_ba.size(), dimids);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+    // #component
+    sprintf(name, "%s_ncomp", mf_name.c_str());
+    err = ncmpi_def_dim(ncid, name, hdr.m_ncomp, dimids + 1);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids + 1);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+    // AMREX_SPACEDIM
+    err = ncmpi_def_dim(ncid, "AMREX_SPACEDIM", AMREX_SPACEDIM, dimids + 2);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, "AMREX_SPACEDIM", dimids + 2);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
 
+    // Stats
     if(hdr.m_vers == VisMF::Header::Version_v1 || hdr.m_vers == VisMF::Header::NoFabHeaderMinMax_v1) {
         sprintf(name, "%s_m_min", mf_name.c_str());
 #ifdef BL_USE_FLOAT
-        ncmpi_def_var(ncid, name, NC_FLOAT, 2, dimids, varids);
+        err = ncmpi_def_var(ncid, name, NC_FLOAT, 2, dimids, varids);
 #else
-        ncmpi_def_var(ncid, name, NC_DOUBLE, 2, dimids, varids);
+        err = ncmpi_def_var(ncid, name, NC_DOUBLE, 2, dimids, varids);
 #endif
+        if (err == NC_ENAMEINUSE){
+            err = ncmpi_inq_varid(ncid, name, &varid);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_inq_varid fail");
+            }
+        }
+        else if (err != NC_NOERR){
+            amrex::Error("ncmpi_def_var fail");
+        }
+
         sprintf(name, "%s_m_max", mf_name.c_str());
 #ifdef BL_USE_FLOAT
-        ncmpi_def_var(ncid, name, NC_FLOAT, 2, dimids, varids + 1);
+        err = ncmpi_def_var(ncid, name, NC_FLOAT, 2, dimids, varids + 1);
 #else
-        ncmpi_def_var(ncid, name, NC_DOUBLE, 2, dimids, varids + 1);
+        err = ncmpi_def_var(ncid, name, NC_DOUBLE, 2, dimids, varids + 1);
 #endif
+        if (err == NC_ENAMEINUSE){
+            err = ncmpi_inq_varid(ncid, name, &varid);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_inq_varid fail");
+            }
+        }
+        else if (err != NC_NOERR){
+            amrex::Error("ncmpi_def_var fail");
+        }
 
-        ncmpi_put_att_int(ncid, varid, "m_min_varid", NC_INT, 1, varids);
-        ncmpi_put_att_int(ncid, varid, "m_max_varid", NC_INT, 1, varids + 1);
+        err = ncmpi_put_att_int(ncid, varid, "m_min_varid", NC_INT, 1, varids);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_put_att_int fail");
+        }
+        
+        err = ncmpi_put_att_int(ncid, varid, "m_max_varid", NC_INT, 1, varids + 1);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_put_att_int fail");
+        }
     }
 
     if(hdr.m_vers == VisMF::Header::NoFabHeaderFAMinMax_v1) {
         sprintf(name, "%s_m_famin", mf_name.c_str());
 #ifdef BL_USE_FLOAT
-        ncmpi_def_var(ncid, name, NC_FLOAT, 1, dimids + 1, varids + 2);
+        err = ncmpi_def_var(ncid, name, NC_FLOAT, 1, dimids + 1, varids + 2);
 #else
-        ncmpi_def_var(ncid, name, NC_DOUBLE, 1, dimids + 1, varids + 2);
+        err = ncmpi_def_var(ncid, name, NC_DOUBLE, 1, dimids + 1, varids + 2);
 #endif
+        if (err == NC_ENAMEINUSE){
+            err = ncmpi_inq_varid(ncid, name, &varid);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_inq_varid fail");
+            }
+        }
+        else if (err != NC_NOERR){
+            amrex::Error("ncmpi_def_var fail");
+        }
+
         sprintf(name, "%s_m_famax", mf_name.c_str());
 #ifdef BL_USE_FLOAT
-        ncmpi_def_var(ncid, name, NC_FLOAT, 1, dimids + 1, varids + 3);
+        err = ncmpi_def_var(ncid, name, NC_FLOAT, 1, dimids + 1, varids + 3);
 #else
-        ncmpi_def_var(ncid, name, NC_DOUBLE, 1, dimids + 1, varids + 3);
+        err = ncmpi_def_var(ncid, name, NC_DOUBLE, 1, dimids + 1, varids + 3);
 #endif
+        if (err == NC_ENAMEINUSE){
+            err = ncmpi_inq_varid(ncid, name, &varid);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_inq_varid fail");
+            }
+        }
+        else if (err != NC_NOERR){
+            amrex::Error("ncmpi_def_var fail");
+        }
 
-        ncmpi_put_att_int(ncid, varid, "m_famin_varid", NC_INT, 1, varids + 2);
-        ncmpi_put_att_int(ncid, varid, "m_famax_varid", NC_INT, 1, varids + 3);
+        err = ncmpi_put_att_int(ncid, varid, "m_famin_varid", NC_INT, 1, varids + 2);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_put_att_int fail");
+        }
+        
+        err = ncmpi_put_att_int(ncid, varid, "m_famax_varid", NC_INT, 1, varids + 3);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_put_att_int fail");
+        }
     }
 
-    err = ncmpi_inq_dimid(ncid, "AMREX_SPACEDIM", dimids + 1);
-    if (err != NC_NOERR){
-        ncmpi_def_dim(ncid, "AMREX_SPACEDIM", AMREX_SPACEDIM, dimids + 1);
-    }
+    dimids[1] = dimids[2];
 
     sprintf(name, "%s_box_lo", mf_name.c_str());
-    ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 4);
+    err = ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 4);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, &varid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
 
     sprintf(name, "%s_box_hi", mf_name.c_str());
-    ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 5);
+    err = ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 5);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, &varid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
 
-    ncmpi_put_att_int(ncid, varid, "box_lo_varid", NC_INT, 1, varids + 4);
-    ncmpi_put_att_int(ncid, varid, "box_lo_varid", NC_INT, 1, varids + 5);
+    err = ncmpi_put_att_int(ncid, varid, "box_lo_varid", NC_INT, 1, varids + 4);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
 
-    ncmpi_enddef(ncid);
-    
+    err = ncmpi_put_att_int(ncid, varid, "box_lo_varid", NC_INT, 1, varids + 5);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    err = ncmpi_enddef(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_enddef fail");
+    }
+
     if(hdr.m_vers == VisMF::Header::Version_v1 || hdr.m_vers == VisMF::Header::NoFabHeaderMinMax_v1) {
         start[1] = 0;
         count[0] = 1;
@@ -994,11 +1124,25 @@ VisMF::WriteHeader_NC (int ncid,
         for(i = 0; i < hdr.m_min.size(); i++){
             start[0] = i;
 #ifdef BL_USE_FLOAT
-            ncmpi_iput_vara_float(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
-            ncmpi_iput_vara_float(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+            err = ncmpi_iput_vara_float(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_iput_vara_float fail");
+            }  
+
+            err = ncmpi_iput_vara_float(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_iput_vara_float fail");
+            }  
 #else
-            ncmpi_iput_vara_double(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
-            ncmpi_iput_vara_double(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+            err = ncmpi_iput_vara_double(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_iput_vara_double fail");
+            }  
+
+            err = ncmpi_iput_vara_double(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_iput_vara_double fail");
+            }  
 #endif
         }
     }
@@ -1007,11 +1151,25 @@ VisMF::WriteHeader_NC (int ncid,
         start[0] = 0;
         count[0] = hdr.m_ncomp;
 #ifdef BL_USE_FLOAT
-        ncmpi_iput_vara_float(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
-        ncmpi_iput_vara_float(ncid, varids[3], start, count, hdr.m_famax.data()void*), NULL);
+        err = ncmpi_iput_vara_float(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_float fail");
+        }  
+
+        err = ncmpi_iput_vara_float(ncid, varids[3], start, count, hdr.m_famax.data()void*), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_float fail");
+        }  
 #else
-        ncmpi_iput_vara_double(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
-        ncmpi_iput_vara_double(ncid, varids[3], start, count, hdr.m_famax.data(), NULL);
+        err = ncmpi_iput_vara_double(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_double fail");
+        }  
+
+        err = ncmpi_iput_vara_double(ncid, varids[3], start, count, hdr.m_famax.data(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_double fail");
+        }  
 #endif
     }
 
@@ -1020,13 +1178,26 @@ VisMF::WriteHeader_NC (int ncid,
     count[1] = AMREX_SPACEDIM;
     for(i = 0; i < hdr.m_ba.size(); i++){
         start[0] = i;
-        ncmpi_iput_vara_int(ncid, varids[4], start, count, ((const Box)(hdr.m_ba[i])).loVect(), NULL);
-        ncmpi_iput_vara_int(ncid, varids[5], start, count, ((const Box)(hdr.m_ba[i])).hiVect(), NULL);
+        err = ncmpi_iput_vara_int(ncid, varids[4], start, count, ((const Box)(hdr.m_ba[i])).loVect(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_int fail");
+        }  
+
+        err = ncmpi_iput_vara_int(ncid, varids[5], start, count, ((const Box)(hdr.m_ba[i])).hiVect(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_int fail");
+        }  
     }
 
-    ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    err = ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_iput_vara_int fail");
+    }  
 
-    ncmpi_inq_put_size(ncid, &putsize);
+    err = ncmpi_inq_put_size(ncid, &putsize);
+    if (err != NC_NOERR){
+        putsize = 0;
+    }
 
     return (long)(putsize - putsize_old);
 }
@@ -1209,73 +1380,105 @@ VisMF::Write (const FabArray<FArrayBox>&    mf,
 
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
 long
-VisMF::Write_NC (int ncid,
+VisMF::Write_PNC (int ncid,
               const FabArray<FArrayBox>&    mf,
               const std::string& mf_name,
               bool               set_ghost)
 {
     int err;
-    int i, j;
-    int dimids[5], varid;
-    int nFABs;
-    int coordinatorProc(ParallelDescriptor::IOProcessorNumber());
+    int i;
+    int dimid, varid;
+    int nFABs_all;
     MPI_Offset putsize, putsize_old;
-    MPI_Offset start[5], count[5];
     char name[1024];
 
     BL_PROFILE("VisMF::Write(FabArray)");
     BL_ASSERT(mf_name[mf_name.length() - 1] != '/');
     BL_ASSERT(currentVersion != VisMF::Header::Undefined_v1);
 
-    ncmpi_inq_put_size(ncid, &putsize_old);
-
-    ncmpi_redef(ncid);
-
-    sprintf(name, "%s_fabs", mf_name.c_str());
-    ncmpi_def_dim(ncid, name, mf.boxArray().size(), dimids);
-    count[0] = 1;
-
-    const BoxArray& ba = mf.boxArray();
-    for(i = 0; i < AMREX_SPACEDIM; i++){
-        start[i + 1] = 0;
-        count[i + 1] = 0;
-        for(j = 0; j < ba.size(); j++){
-            count[i + 1] = (MPI_Offset)std::max((int)count[i + 1], ((const Box)(ba[j])).hiVect()[i] - ((const Box)(ba[j])).loVect()[i]);
-        }
-        sprintf(name, "%s_dim_%d", mf_name.c_str(), i);
-        ncmpi_def_dim(ncid, name, count[i + 1], dimids + i + 1);
+    err = ncmpi_inq_put_size(ncid, &putsize_old);
+    if (err != NC_NOERR){
+        putsize_old = 0;
     }
 
-    sprintf(name, "%s_components", mf_name.c_str());
-    ncmpi_def_dim(ncid, name, mf.nComp(), dimids + AMREX_SPACEDIM + 1);
-    start[AMREX_SPACEDIM + 1] = 0;
-    count[AMREX_SPACEDIM + 1] = mf.nComp();
+    err = ncmpi_redef(ncid);
+    if (err != NC_NOERR && err != NC_EINDEFINE){
+        amrex::Error("ncmpi_redef fail");
+    }
 
-#ifdef BL_USE_FLOAT
-    ncmpi_def_var(ncid, mf_name.c_str(), NC_FLOAT, AMREX_SPACEDIM + 2, dimids, &varid);
-#else
-    err = ncmpi_def_var(ncid, mf_name.c_str(), NC_DOUBLE, AMREX_SPACEDIM + 2, dimids, &varid);
-#endif
+    nFABs_all = mf.boxArray().size();
 
-    ncmpi_enddef(ncid);
+    // Determine offset and size of each fabs
+    std::vector<MPI_Offset> lens(nFABs_all, 0);
+    std::vector<MPI_Offset> offs(nFABs_all + 1);
 
-    // Count nreqs
+    // Size of each fab
     for(MFIter mfi(mf); mfi.isValid(); ++mfi) {
-        ++nFABs;
+        const FArrayBox &fab = mf[mfi];
+        lens[mfi.index()] = fab.box().numPts() * mf.nComp();
+    }
+    
+    // Lens of all fabs
+    ParallelDescriptor::ReduceLonglongAnd (lens.data(), lens.size());
+
+    // Offsets
+    offs[0] = 0;
+    for(i = 0; i < lens.size(); i++){
+        offs[i + 1] = offs[i] + lens[i];
+    }
+
+    // Define dimension
+    sprintf(name, "%s_data_dim", mf_name.c_str());
+    err = ncmpi_def_dim(ncid, name, offs[nFABs_all], &dimid);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, &dimid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+
+    // Define variable
+#ifdef BL_USE_FLOAT
+    err = ncmpi_def_var(ncid, mf_name.c_str(), NC_FLOAT, 1, &dimid, &varid);
+#else
+    err = ncmpi_def_var(ncid, mf_name.c_str(), NC_DOUBLE, 1, &dimid, &varid);
+#endif
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, &varid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
+
+    err = ncmpi_enddef(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_enddef fail");
     }
 
     // Posting nonblocking req
     for(MFIter mfi(mf); mfi.isValid(); ++mfi) {
         const FArrayBox &fab = mf[mfi];
-        start[0] = mfi.index();
+        int idx = mfi.index();
 #ifdef BL_USE_FLOAT
-        ncmpi_iput_vara_float(ncid, varid, start, count, fab.dataPtr(), NULL);
+        err = ncmpi_iput_vara_float(ncid, varid, &(offs[idx]), &(lens[idx]), fab.dataPtr(), NULL);
 #else
-        ncmpi_iput_vara_double(ncid, varid, start, count, fab.dataPtr(), NULL);
+        err = ncmpi_iput_vara_double(ncid, varid, &(offs[idx]), &(lens[idx]), fab.dataPtr(), NULL);
 #endif
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara fail");
+        }
     }
 
-    ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    err = ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_wait_all fail");
+    }
 
     VisMF::Header hdr(mf, NFiles, currentVersion, false);
     
@@ -1283,9 +1486,12 @@ VisMF::Write_NC (int ncid,
         hdr.CalculateMinMax(mf, 0);
     }
 
-    VisMF::WriteHeader_NC(ncid, varid, mf_name, hdr);
+    VisMF::WriteHeader_PNC(ncid, varid, mf_name, hdr);
 
-    ncmpi_inq_put_size(ncid, &putsize);
+    err = ncmpi_inq_put_size(ncid, &putsize);
+    if (err != NC_NOERR){
+        putsize = 0;
+    }
 
     return (long)(putsize - putsize_old);
 }
@@ -2100,6 +2306,30 @@ VisMF::Read (FabArray<FArrayBox> &mf,
     BL_ASSERT(mf.ok());
 }
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+void
+VisMF::Read (int ncid,
+             FabArray<FArrayBox> &mf,
+             const std::string   &mf_name,
+	         int allow_empty_mf)
+{
+    Real hEndTime, hStartTime, faCopyTime(0.0);
+    Real startTime(amrex::second());
+    static Real totalTime(0.0);
+    int myProc(ParallelDescriptor::MyProc());
+    int messTotal(0);
+
+    
+
+    if (mf.empty()) {
+	    DistributionMapping dm(hdr.m_ba);
+	    mf.define(hdr.m_ba, dm, hdr.m_ncomp, hdr.m_ngrow, MFInfo(), FArrayBoxFactory());
+    }
+    else {
+	    BL_ASSERT(amrex::match(hdr.m_ba,mf.boxArray()));
+    }
+}
+#endif
 
 bool
 VisMF::Exist (const std::string& mf_name)

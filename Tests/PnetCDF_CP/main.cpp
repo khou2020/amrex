@@ -132,7 +132,7 @@ int main(int argc, char* argv[])
         ncmpi__enddef(ncid, 10485760, 0, 0, 0);
         for (int lev = 0; lev < nlevs; lev++) {
             sprintf(name, "Level_%d", lev);
-            VisMF::Write_NC(ncid, *(mf[lev]), std::string(name), false);
+            VisMF::Write_PNC(ncid, *(mf[lev]), std::string(name), false);
         }
         ncmpi_close(ncid);
     }

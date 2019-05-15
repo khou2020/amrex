@@ -183,7 +183,7 @@ public:
                        VisMF::How         how = NFiles,
                        bool               set_ghost = false);
 #ifdef BL_USE_PNETCDF
-    static long Write_NC (int ncid,
+    static long Write_PNC (int ncid,
                           const FabArray<FArrayBox> &fafab,
                           const std::string& name,
                           bool               set_ghost = false);
@@ -297,7 +297,7 @@ private:
                              VisMF::Header     &hdr,
 			     int procToWrite = ParallelDescriptor::IOProcessorNumber());
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
-    static long WriteHeader_NC (int ncid,
+    static long WriteHeader_PNC (int ncid,
                                 int varid,
                                 const std::string &mf_name,
                                 VisMF::Header     &hdr);

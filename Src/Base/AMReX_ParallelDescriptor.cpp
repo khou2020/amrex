@@ -71,6 +71,9 @@ namespace ParallelDescriptor
 
 	void DoAllReduceReal     (Real*      r, MPI_Op op, int cnt);
 	void DoAllReduceLong     (long*      r, MPI_Op op, int cnt);
+#ifdef BL_USE_PNETCDF
+    void DoAllReduceLonglong (long long* r, MPI_Op op, int cnt);
+#endif
 	void DoAllReduceInt      (int*       r, MPI_Op op, int cnt);
 
 	void DoReduceReal     (Real&      r, MPI_Op op, int cpu);
@@ -927,6 +930,14 @@ ParallelDescriptor::ReduceLongAnd (Vector<std::reference_wrapper<long> >&& rvar,
     }
 }
 
+#ifdef BL_USE_PNETCDF
+void
+ParallelDescriptor::ReduceLonglongAnd (long long* r, int cnt)
+{
+    util::DoAllReduceLonglong(r,MPI_LAND,cnt);
+}
+#endif
+
 void
 ParallelDescriptor::util::DoAllReduceReal (Real&  r,
                                            MPI_Op op)
@@ -1288,6 +1299,52 @@ ParallelDescriptor::util::DoReduceLong (long*  r,
             r[i] = recv[i];
     }
 }
+
+#ifdef BL_USE_PNETCDF
+void
+ParallelDescriptor::util::DoAllReduceLonglong (long long*  r,
+                                           MPI_Op op,
+                                           int    cnt)
+{
+#ifdef BL_LAZY
+    Lazy::EvalReduction();
+#endif
+
+    BL_PROFILE_S("ParallelDescriptor::util::DoAllReduceLong()");
+    BL_COMM_PROFILE_ALLREDUCE(BLProfiler::AllReduceL, BLProfiler::BeforeCall(), true);
+
+    BL_ASSERT(cnt > 0);
+
+    Vector<long long> recv(cnt);
+
+#if defined(BL_USE_MPI3)
+    if (doTeamReduce() > 1) {
+	Vector<long long> recv_team(cnt);
+	BL_MPI_REQUIRE( MPI_Reduce(r, recv_team.dataPtr(), cnt, MPI_LONG_LONG, op,
+				   0, MyTeam().get_team_comm()) );
+	if (isTeamLead()) {
+	    BL_MPI_REQUIRE( MPI_Allreduce(recv_team.dataPtr(), recv.dataPtr(), cnt, 
+					  MPI_LONG_LONG, op,
+					  MyTeam().get_lead_comm()) );
+	}
+	BL_MPI_REQUIRE( MPI_Bcast(recv.dataPtr(), cnt, MPI_LONG_LONG,
+				  0, MyTeam().get_team_comm()) );
+    }
+    else
+#endif
+    {
+	BL_MPI_REQUIRE( MPI_Allreduce(r,
+				      recv.dataPtr(),
+				      cnt,
+				      MPI_LONG_LONG,
+				      op,
+				      Communicator()) );
+    }
+    BL_COMM_PROFILE_ALLREDUCE(BLProfiler::AllReduceL, cnt * sizeof(long long), false);
+    for (int i = 0; i < cnt; i++)
+        r[i] = recv[i];
+}
+#endif
 
 void
 ParallelDescriptor::util::DoAllReduceInt (int&   r,
@@ -1767,6 +1824,10 @@ void ParallelDescriptor::ReduceLongAnd (Vector<std::reference_wrapper<long> >&& 
 void ParallelDescriptor::ReduceLongSum (Vector<std::reference_wrapper<long> >&& rvar, int cpu) {}
 void ParallelDescriptor::ReduceLongMax (Vector<std::reference_wrapper<long> >&& rvar, int cpu) {}
 void ParallelDescriptor::ReduceLongMin (Vector<std::reference_wrapper<long> >&& rvar, int cpu) {}
+
+#ifdef BL_USE_PNETCDF
+void ParallelDescriptor::ReduceLongAnd (long*,int) {}
+#endif
 
 void ParallelDescriptor::ReduceIntSum (int&) {}
 void ParallelDescriptor::ReduceIntMax (int&) {}
