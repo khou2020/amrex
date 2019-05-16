@@ -217,6 +217,13 @@ public:
 		      int coordinatorProc = ParallelDescriptor::IOProcessorNumber(),
 		      int allow_empty_mf = 0);
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+    static void Read_PNC (  int ncid,
+                            FabArray<FArrayBox> &mf,
+                const std::string   &mf_name,
+	            int allow_empty_mf);
+#endif
+
     //! Does FabArray exist?
     static bool Exist (const std::string &name);
 

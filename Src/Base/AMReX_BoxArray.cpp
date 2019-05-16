@@ -10,6 +10,10 @@
 #include <AMReX_MemProfiler.H>
 #endif
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+#include <pnetcdf.h>
+#endif
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -455,6 +459,60 @@ BoxArray::readFrom (std::istream& is)
     type_update();
     return ndims;
 }
+
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+int
+BoxArray::readFrom (int ncid, int varid)
+{
+    int err;
+    int i;
+    int nFABs;
+    int varids[2];
+    MPI_Offset start[2], count[2];
+
+    err = ncmpi_get_att_int(ncid, varid, "m_nfab", &nFABs);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+
+    m_ref->resize(nFABs);
+
+    // box array
+    err = ncmpi_get_att_int(ncid, varid, "box_lo_varid", varids);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+
+    err = ncmpi_get_att_int(ncid, varid, "box_hi_varid", varids + 1);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+
+    start[1] = 0;
+    count[0] = 1;
+    count[1] = AMREX_SPACEDIM;
+
+    for(i = 0; i < nFABs; i++){
+        start[0] = i;
+        err = ncmpi_iget_vara_int(ncid, varids[0], start, count, (int*)(m_ref->m_abox[i].loVect()), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iget_vara_int fail");
+        }  
+
+        err = ncmpi_iget_vara_int(ncid, varids[1], start, count, (int*)(m_ref->m_abox[i].hiVect()), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iget_vara_int fail");
+        }  
+    }
+
+    err = ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_wait_all fail");
+    }  
+
+    return 0;
+}
+#endif
 
 std::ostream&
 BoxArray::writeOn (std::ostream& os) const

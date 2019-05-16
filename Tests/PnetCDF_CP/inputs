@@ -1,5 +1,5 @@
 # Domain size
-ncells = 128 
+ncells = 32 
 
 # Maximum allowable size of each subdomain in the problem domain; 
 # this is used to decompose the domain for parallel calculations.

@@ -135,6 +135,13 @@ int main(int argc, char* argv[])
             VisMF::Write_PNC(ncid, *(mf[lev]), std::string(name), false);
         }
         ncmpi_close(ncid);
+
+        ncmpi_open(MPI_COMM_WORLD, "checkpoint.nc", 0, MPI_INFO_NULL, &ncid);
+        for (int lev = 0; lev < nlevs; lev++) {
+            sprintf(name, "Level_%d", lev);
+            VisMF::Read_PNC(ncid, *(mf[lev]), std::string(name), false);
+        }
+        ncmpi_close(ncid);
     }
 
     amrex::Finalize(); 

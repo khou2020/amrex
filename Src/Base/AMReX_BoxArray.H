@@ -282,7 +282,9 @@ public:
     * using writeOn().
     */
     int readFrom (std::istream& is);
-
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+    int readFrom (int ncid, int varid);
+#endif
     //! Output this BoxArray to a checkpoint file.
     std::ostream& writeOn (std::ostream&) const;
 
