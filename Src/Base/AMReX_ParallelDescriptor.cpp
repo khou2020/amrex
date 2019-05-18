@@ -932,9 +932,9 @@ ParallelDescriptor::ReduceLongAnd (Vector<std::reference_wrapper<long> >&& rvar,
 
 #ifdef BL_USE_PNETCDF
 void
-ParallelDescriptor::ReduceLonglongAnd (long long* r, int cnt)
+ParallelDescriptor::ReduceLonglongSum (long long* r, int cnt)
 {
-    util::DoAllReduceLonglong(r,MPI_LAND,cnt);
+    util::DoAllReduceLonglong(r,MPI_SUM,cnt);
 }
 #endif
 

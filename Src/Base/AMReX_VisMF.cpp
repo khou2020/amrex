@@ -1425,9 +1425,9 @@ VisMF::Write_PNC (int ncid,
         const FArrayBox &fab = mf[mfi];
         lens[mfi.index()] = fab.box().numPts() * mf.nComp();
     }
-    
+
     // Lens of all fabs
-    ParallelDescriptor::ReduceLonglongAnd (lens.data(), lens.size());
+    ParallelDescriptor::ReduceLonglongSum (lens.data(), lens.size());
 
     // Offsets
     offs[0] = 0;

@@ -460,7 +460,7 @@ namespace ParallelDescriptor
     void ReduceLongAnd (Vector<std::reference_wrapper<long> >&& rvar, int cpu);
 
 #ifdef BL_USE_PNETCDF
-    void ReduceLonglongAnd (long long* rvar, int cnt);
+    void ReduceLonglongSum (long long* rvar, int cnt);
 #endif
 
     // There are no color versions of reducion to specified cpu, because it could
