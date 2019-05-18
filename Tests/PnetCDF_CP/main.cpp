@@ -3,6 +3,8 @@
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_Particles.H>
 #include <string>
+#include <cstdio>
+#include <iostream>
 
 #ifdef BL_USE_PNETCDF
 #include <WritePlotfilePnetCDF.H>
@@ -95,7 +97,7 @@ int main(int argc, char* argv[])
         for (int lev = 0; lev < nlevs; lev++) {
             dmap[lev] = DistributionMapping{ba[lev]};
             mf[lev].reset(new MultiFab(ba[lev], dmap[lev], ncomp, nghost));
-            mf[lev]->setVal(lev);
+            mf[lev]->setVal(lev + 1);
         }
 
         // Add some particles
@@ -136,12 +138,34 @@ int main(int argc, char* argv[])
         }
         ncmpi_close(ncid);
 
+        for (int lev = 0; lev < nlevs; lev++) {
+            mf[lev]->setVal(0);
+        }
+
         ncmpi_open(MPI_COMM_WORLD, "checkpoint.nc", 0, MPI_INFO_NULL, &ncid);
         for (int lev = 0; lev < nlevs; lev++) {
             sprintf(name, "Level_%d", lev);
             VisMF::Read_PNC(ncid, *(mf[lev]), std::string(name), false);
         }
         ncmpi_close(ncid);
+
+        for (int lev = 0; lev < nlevs; lev++) {
+            for(MFIter mfi(*(mf[lev])); mfi.isValid(); ++mfi) {
+                const FArrayBox &fab = (*(mf[lev]))[mfi];
+#ifdef BL_USE_FLOAT
+                const float *data = fab.dataPtr();
+                const float ans = lev + 1;
+#else
+                const double *data = fab.dataPtr();
+                const double ans = lev + 1;
+#endif
+                for(int i = 0; i < (*(mf[lev])).nComp() * fab.numPts(); i++){
+                    if (data[i] != ans){
+                        std::cout << "Error: expect data[" << i << "] = " << ans << ", but got " << data[i] << std::endl;
+                    }
+                }
+            }
+        }
     }
 
     amrex::Finalize(); 

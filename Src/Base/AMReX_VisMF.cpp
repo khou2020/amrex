@@ -1070,6 +1070,7 @@ VisMF::WriteHeader_PNC (int ncid,
             amrex::Error("ncmpi_def_var fail");
         }
 
+        
         err = ncmpi_put_att_int(ncid, varid, "m_famin_varid", NC_INT, 1, varids + 2);
         if (err != NC_NOERR){
             amrex::Error("ncmpi_put_att_int fail");
@@ -1122,60 +1123,62 @@ VisMF::WriteHeader_PNC (int ncid,
         amrex::Error("ncmpi_enddef fail");
     }
 
-    if(hdr.m_vers == VisMF::Header::Version_v1 || hdr.m_vers == VisMF::Header::NoFabHeaderMinMax_v1) {
-        start[1] = 0;
-        count[0] = 1;
-        count[1] = hdr.m_ncomp;
-        for(i = 0; i < hdr.m_min.size(); i++){
-            start[0] = i;
+    if (ParallelDescriptor::MyProc() == 0){
+        if(hdr.m_vers == VisMF::Header::Version_v1 || hdr.m_vers == VisMF::Header::NoFabHeaderMinMax_v1) {
+            start[1] = 0;
+            count[0] = 1;
+            count[1] = hdr.m_ncomp;
+            for(i = 0; i < hdr.m_min.size(); i++){
+                start[0] = i;
 #ifdef BL_USE_FLOAT
-            err = ncmpi_iput_vara_float(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
+                err = ncmpi_iput_vara_float(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
+                if (err != NC_NOERR){
+                    amrex::Error("ncmpi_iput_vara_float fail");
+                }  
+
+                err = ncmpi_iput_vara_float(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+                if (err != NC_NOERR){
+                    amrex::Error("ncmpi_iput_vara_float fail");
+                }  
+#else
+                err = ncmpi_iput_vara_double(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
+                if (err != NC_NOERR){
+                    amrex::Error("ncmpi_iput_vara_double fail");
+                }  
+
+                err = ncmpi_iput_vara_double(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+                if (err != NC_NOERR){
+                    amrex::Error("ncmpi_iput_vara_double fail");
+                }  
+#endif
+            }
+        }
+
+        if(hdr.m_vers == VisMF::Header::NoFabHeaderFAMinMax_v1) {
+            start[0] = 0;
+            count[0] = hdr.m_ncomp;
+#ifdef BL_USE_FLOAT
+            err = ncmpi_iput_vara_float(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
             if (err != NC_NOERR){
                 amrex::Error("ncmpi_iput_vara_float fail");
             }  
 
-            err = ncmpi_iput_vara_float(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+            err = ncmpi_iput_vara_float(ncid, varids[3], start, count, hdr.m_famax.data()void*), NULL);
             if (err != NC_NOERR){
                 amrex::Error("ncmpi_iput_vara_float fail");
             }  
 #else
-            err = ncmpi_iput_vara_double(ncid, varids[0], start, count, hdr.m_min[i].data(), NULL);
+            err = ncmpi_iput_vara_double(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
             if (err != NC_NOERR){
                 amrex::Error("ncmpi_iput_vara_double fail");
             }  
 
-            err = ncmpi_iput_vara_double(ncid, varids[1], start, count, hdr.m_max[i].data(), NULL);
+            err = ncmpi_iput_vara_double(ncid, varids[3], start, count, hdr.m_famax.data(), NULL);
             if (err != NC_NOERR){
                 amrex::Error("ncmpi_iput_vara_double fail");
             }  
 #endif
         }
-    }
-
-    if(hdr.m_vers == VisMF::Header::NoFabHeaderFAMinMax_v1) {
-        start[0] = 0;
-        count[0] = hdr.m_ncomp;
-#ifdef BL_USE_FLOAT
-        err = ncmpi_iput_vara_float(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
-        if (err != NC_NOERR){
-            amrex::Error("ncmpi_iput_vara_float fail");
-        }  
-
-        err = ncmpi_iput_vara_float(ncid, varids[3], start, count, hdr.m_famax.data()void*), NULL);
-        if (err != NC_NOERR){
-            amrex::Error("ncmpi_iput_vara_float fail");
-        }  
-#else
-        err = ncmpi_iput_vara_double(ncid, varids[2], start, count, hdr.m_famin.data(), NULL);
-        if (err != NC_NOERR){
-            amrex::Error("ncmpi_iput_vara_double fail");
-        }  
-
-        err = ncmpi_iput_vara_double(ncid, varids[3], start, count, hdr.m_famax.data(), NULL);
-        if (err != NC_NOERR){
-            amrex::Error("ncmpi_iput_vara_double fail");
-        }  
-#endif
     }
 
     start[1] = 0;
