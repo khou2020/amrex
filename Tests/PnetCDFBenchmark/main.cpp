@@ -124,14 +124,19 @@ int main(int argc, char* argv[])
     }
 
 #ifdef BL_USE_PNETCDF   
-    WriteMultiLevelPlotfilePNETCDF("plt00000", nlevs, amrex::GetVecOfConstPtrs(mf), 
-                                varnames, geom, time, dt, ref_ratio);
+    //WriteMultiLevelPlotfilePNETCDF("plt00000", nlevs, amrex::GetVecOfConstPtrs(mf), 
+    //                            varnames, geom, time, dt, ref_ratio);
 #endif
 
     Vector<int> level_steps(nlevs, 0);
+#ifdef BL_USE_PNETCDF   
+    WriteMultiLevelPlotfile_PNC("plt00000.nc", nlevs, amrex::GetVecOfConstPtrs(mf),
+                            varnames, geom, time, level_steps, ref_ratio);
+#else
     WriteMultiLevelPlotfile("plt00000", nlevs, amrex::GetVecOfConstPtrs(mf),
                             varnames, geom, time, level_steps, ref_ratio);
-   
+#endif
+
     Vector<std::string> particle_realnames;
     for (int i = 0; i < NStructReal + NArrayReal; ++i)
     {

@@ -166,6 +166,21 @@ int main(int argc, char* argv[])
                 }
             }
         }
+
+        Vector<std::string> particle_realnames;
+        for (int i = 0; i < NStructReal + NArrayReal; ++i)
+        {
+            particle_realnames.push_back("particle_real_component_" + std::to_string(i));
+        }
+
+        Vector<std::string> particle_intnames;
+        for (int i = 0; i < NStructInt + NArrayInt; ++i)
+        {
+            particle_intnames.push_back("particle_int_component_" + std::to_string(i));
+        }
+        
+        myPC.Checkpoint("plt00000", "particle0", false, particle_realnames, particle_intnames);
+        
     }
 
     amrex::Finalize(); 
