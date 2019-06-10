@@ -1387,6 +1387,7 @@ VisMF::Write (const FabArray<FArrayBox>&    mf,
 }
 
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+#if PNC_MF_LAYOUT==0
 long
 VisMF::Write_PNC (int ncid,
               const FabArray<FArrayBox>&    mf,
@@ -1503,6 +1504,244 @@ VisMF::Write_PNC (int ncid,
 
     return (long)(putsize - putsize_old);
 }
+#elif PNC_MF_LAYOUT==1
+long
+VisMF::Write_NC (int ncid,
+              const FabArray<FArrayBox>&    mf,
+              const std::string& mf_name,
+              bool               set_ghost)
+{
+    int err;
+    int i, j;
+    int dimids[5], varid;
+    int nFABs;
+    int coordinatorProc(ParallelDescriptor::IOProcessorNumber());
+    MPI_Offset putsize, putsize_old;
+    MPI_Offset start[5], count[5];
+    char name[1024];
+
+    BL_PROFILE("VisMF::Write(FabArray)");
+    BL_ASSERT(mf_name[mf_name.length() - 1] != '/');
+    BL_ASSERT(currentVersion != VisMF::Header::Undefined_v1);
+
+    ncmpi_inq_put_size(ncid, &putsize_old);
+
+    ncmpi_redef(ncid);
+
+    sprintf(name, "%s_fabs", mf_name.c_str());
+    ncmpi_def_dim(ncid, name, mf.boxArray().size(), dimids);
+    count[0] = 1;
+
+    const BoxArray& ba = mf.boxArray();
+    for(i = 0; i < AMREX_SPACEDIM; i++){
+        start[i + 1] = 0;
+        count[i + 1] = 0;
+        for(j = 0; j < ba.size(); j++){
+            count[i + 1] = (MPI_Offset)std::max((int)count[i + 1], ((const Box)(ba[j])).hiVect()[i] - ((const Box)(ba[j])).loVect()[i]);
+        }
+        sprintf(name, "%s_dim_%d", mf_name.c_str(), i);
+        ncmpi_def_dim(ncid, name, count[i + 1], dimids + i + 1);
+    }
+
+    sprintf(name, "%s_components", mf_name.c_str());
+    ncmpi_def_dim(ncid, name, mf.nComp(), dimids + AMREX_SPACEDIM + 1);
+    start[AMREX_SPACEDIM + 1] = 0;
+    count[AMREX_SPACEDIM + 1] = mf.nComp();
+
+#ifdef BL_USE_FLOAT
+    ncmpi_def_var(ncid, mf_name.c_str(), NC_FLOAT, AMREX_SPACEDIM + 2, dimids, &varid);
+#else
+    err = ncmpi_def_var(ncid, mf_name.c_str(), NC_DOUBLE, AMREX_SPACEDIM + 2, dimids, &varid);
+#endif
+
+    ncmpi_enddef(ncid);
+
+    // Count nreqs
+    for(MFIter mfi(mf); mfi.isValid(); ++mfi) {
+        ++nFABs;
+    }
+
+    // Posting nonblocking req
+    for(MFIter mfi(mf); mfi.isValid(); ++mfi) {
+        const FArrayBox &fab = mf[mfi];
+        start[0] = mfi.index();
+#ifdef BL_USE_FLOAT
+        ncmpi_iput_vara_float(ncid, varid, start, count, fab.dataPtr(), NULL);
+#else
+        ncmpi_iput_vara_double(ncid, varid, start, count, fab.dataPtr(), NULL);
+#endif
+    }
+
+    ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+
+    VisMF::Header hdr(mf, NFiles, currentVersion, false);
+    
+    if(currentVersion == VisMF::Header::Version_v1 || currentVersion == VisMF::Header::NoFabHeaderMinMax_v1) {
+        hdr.CalculateMinMax(mf, 0);
+    }
+
+    VisMF::WriteHeader_NC(ncid, varid, mf_name, hdr);
+
+    ncmpi_inq_put_size(ncid, &putsize);
+
+    return (long)(putsize - putsize_old);
+}
+#elif PNC_MF_LAYOUT==2
+long
+VisMF::Write_PNC (int ncid,
+              const FabArray<FArrayBox>&    mf,
+              const std::string& mf_name,
+              bool               set_ghost)
+{
+    int err;
+    int i, j;
+    int nFABs_all;
+    int varid;
+    int dimids[AMREX_SPACEDIM + 1];
+    MPI_Offset putsize, putsize_old, dlen;
+    char name[1024];
+
+    BL_PROFILE("VisMF::Write(FabArray)");
+    BL_ASSERT(mf_name[mf_name.length() - 1] != '/');
+    BL_ASSERT(currentVersion != VisMF::Header::Undefined_v1);
+
+    err = ncmpi_inq_put_size(ncid, &putsize_old);
+    if (err != NC_NOERR){
+        putsize_old = 0;
+    }
+
+    err = ncmpi_redef(ncid);
+    if (err != NC_NOERR && err != NC_EINDEFINE){
+        amrex::Error("ncmpi_redef fail");
+    }
+
+    const BoxArray& ba = mf.boxArray();
+    nFABs_all = mf.boxArray().size();
+
+    // Id of data variable
+    std::vector<int> varids(nFABs_all, 0);
+    
+    // Placeholder dimension
+    sprintf(name, "%s_ngrid", mf_name.c_str());
+    err = ncmpi_def_dim(ncid, name, nFABs_all, dimids);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+
+    // Placeholder variable
+    err = ncmpi_def_var(ncid, mf_name.c_str(), NC_INT, 1, dimids, &varid);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, mf_name.c_str(), &varid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
+
+    // Ncomp dimension
+    sprintf(name, "%s_ncomp", mf_name.c_str());
+    dlen = mf.nComp();
+    err = ncmpi_def_dim(ncid, name, dlen, dimids + AMREX_SPACEDIM);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids + AMREX_SPACEDIM);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+    
+    // Define dimension and variable for grids
+    for(i = 0; i < nFABs_all; i++){
+        for(j = 0; j < AMREX_SPACEDIM; j++){
+            sprintf(name, "%s_grid%d_dim%d", mf_name.c_str(), i, j);
+            dlen = ((const Box)(ba[i])).hiVect()[j] - ((const Box)(ba[i])).loVect()[j] + 1;
+            err = ncmpi_def_dim(ncid, name, dlen, dimids + j);
+            if (err == NC_ENAMEINUSE){
+                err = ncmpi_inq_dimid(ncid, name, dimids + j);
+                if (err != NC_NOERR){
+                    amrex::Error("ncmpi_inq_dimid fail");
+                }
+            }
+            else if (err != NC_NOERR){
+                amrex::Error("ncmpi_def_dim fail");
+            }
+        }
+
+        sprintf(name, "%s_ngrid%d", mf_name.c_str(), i);
+#ifdef BL_USE_FLOAT
+        err = ncmpi_def_var(ncid, name, NC_FLOAT, AMREX_SPACEDIM + 1, dimids, &(varids[i]));
+#else
+        err = ncmpi_def_var(ncid, name, NC_DOUBLE, AMREX_SPACEDIM + 1, dimids, &(varids[i]));
+#endif
+        if (err == NC_ENAMEINUSE){
+            err = ncmpi_inq_varid(ncid, name, &(varids[i]));
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_inq_varid fail");
+            }
+        }
+        else if (err != NC_NOERR){
+            amrex::Error("ncmpi_def_var fail");
+        }
+    }
+
+    err = ncmpi_enddef(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_enddef fail");
+    }
+
+    // Rank 0 write varids
+    if (ParallelDescriptor::MyProc() == 0){
+        err = ncmpi_iput_var_int(ncid, varid, varids.data(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_var fail");
+        }
+    }
+
+    // Posting nonblocking req on grids
+    for(MFIter mfi(mf); mfi.isValid(); ++mfi) {
+        const FArrayBox &fab = mf[mfi];
+        int idx = mfi.index();
+#ifdef BL_USE_FLOAT
+        err = ncmpi_iput_var_float(ncid, varids[idx], fab.dataPtr(), NULL);
+#else
+        err = ncmpi_iput_var_double(ncid, varids[idx], fab.dataPtr(), NULL);
+#endif
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara fail");
+        }
+    }
+
+    err = ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_wait_all fail");
+    }
+
+    VisMF::Header hdr(mf, NFiles, currentVersion, false);
+    
+    if(currentVersion == VisMF::Header::Version_v1 || currentVersion == VisMF::Header::NoFabHeaderMinMax_v1) {
+        hdr.CalculateMinMax(mf, 0);
+    }
+
+    VisMF::WriteHeader_PNC(ncid, varid, mf_name, hdr);
+
+    err = ncmpi_inq_put_size(ncid, &putsize);
+    if (err != NC_NOERR){
+        putsize = 0;
+    }
+
+    return (long)(putsize - putsize_old);
+}
+#endif
 #endif
 
 long
@@ -2483,6 +2722,7 @@ VisMF::Read_PNC(int ncid,
 	    BL_ASSERT(amrex::match(hdr.m_ba,mf.boxArray()));
     }
 
+#if PNC_MF_LAYOUT==0
     // Determine offset and size of each fabs
     std::vector<MPI_Offset> lens(nFABs, 0);
     std::vector<MPI_Offset> offs(nFABs + 1);
@@ -2507,11 +2747,39 @@ VisMF::Read_PNC(int ncid,
         }
     }
 
+#elif PNC_MF_LAYOUT==1
+
+    std::cout << "unsupported read layout" << std::endl;
+
+#elif PNC_MF_LAYOUT==2
+
+    std::vector<int> vids(nFABs);
+
+    err = ncmpi_get_var_int_all(ncid, varid, vids.data());
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_var_int_all fail");
+    }
+
+    // Mesh data
+    for(MFIter mfi(mf); mfi.isValid(); ++mfi) {
+        const FArrayBox &fab = mf[mfi];
+        int idx = mfi.index();
+#ifdef BL_USE_FLOAT
+        err = ncmpi_iget_var_float(ncid, vids[idx], (float*)(fab.dataPtr()), NULL);
+#else
+        err = ncmpi_iget_var_double(ncid, vids[idx], (double*)(fab.dataPtr()), NULL);
+#endif
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iget_var fail");
+        }
+    }
+#endif
     err = ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
     if (err != NC_NOERR){
         amrex::Error("ncmpi_wait_all fail");
     }
 }
+
 #endif
 
 bool
