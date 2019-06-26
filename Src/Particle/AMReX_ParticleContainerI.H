@@ -2620,33 +2620,17 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
                            const Vector<std::string>& real_comp_names,
                            const Vector<std::string>& int_comp_names) const
 {
-    BL_PROFILE("ParticleContainer::WriteBinaryParticleData()");
-    BL_ASSERT(OK());
-
-    BL_ASSERT(sizeof(typename ParticleType::RealType) == 4 ||
-              sizeof(typename ParticleType::RealType) == 8);
-
-    const int NProcs = ParallelDescriptor::NProcs();
-    const int IOProcNumber = ParallelDescriptor::IOProcessorNumber();
-    const Real strttime = amrex::second();
-
-    std::string pdir = dir;
-    if (not pdir.empty() and pdir[pdir.size() - 1] != '/')
-        pdir += '/';
-    pdir += name;
-
-    if (!levelDirectoriesCreated)
-    {
-        if (ParallelDescriptor::IOProcessor())
-            if (!amrex::UtilCreateDirectory(pdir, 0755))
-                amrex::CreateDirectoryFailed(pdir);
-        ParallelDescriptor::Barrier();
-    }
-
-    std::ofstream HdrFile;
-
-    long nparticles = 0;
-    int maxnextid;
+    int err;
+    int i, j;
+    int mhow;
+    int varid;
+    int *varids;
+    int dimids[3];
+    MPI_Offset start[2], count[2];
+    MPI_Offset putsize, putsize_old;
+    int num_output_real = 0;
+    int num_output_int = 0;
+    char name[1024];
 
     if (usePrePost)
     {
@@ -2679,92 +2663,120 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
         ParallelDescriptor::ReduceIntMax(maxnextid, IOProcNumber);
     }
 
-    if (ParallelDescriptor::IOProcessor())
-    {
-        std::string HdrFileName = pdir;
+    
+    for (int i = 0; i < NumRealComps() + NStructReal; ++i)
+        if (write_real_comp[i])
+            ++num_output_real;
+    for (int i = 0; i < NumIntComps() + NStructInt; ++i)
+        if (write_int_comp[i])
+            ++num_output_int;
 
-        if (!HdrFileName.empty() && HdrFileName[HdrFileName.size() - 1] != '/')
-            HdrFileName += '/';
-
-        HdrFileName += "Header";
-        HdrFileNamePrePost = HdrFileName;
-
-        HdrFile.open(HdrFileName.c_str(), std::ios::out | std::ios::trunc);
-
-        if (!HdrFile.good())
-            amrex::FileOpenFailed(HdrFileName);
-
-        //
-        // First thing written is our Checkpoint/Restart version string.
-        // We append "_single" or "_double" to the version string indicating
-        // whether we're using "float" or "double" floating point data in the
-        // particles so that we can Restart from the checkpoint files.
-        //
-        if (sizeof(typename ParticleType::RealType) == 4)
-        {
-            HdrFile << ParticleType::Version() << "_single" << '\n';
-        }
-        else
-        {
-            HdrFile << ParticleType::Version() << "_double" << '\n';
-        }
-
-        int num_output_real = 0;
-        for (int i = 0; i < NumRealComps() + NStructReal; ++i)
-            if (write_real_comp[i])
-                ++num_output_real;
-
-        int num_output_int = 0;
-        for (int i = 0; i < NumIntComps() + NStructInt; ++i)
-            if (write_int_comp[i])
-                ++num_output_int;
-
-        // AMREX_SPACEDIM and N for sanity checking.
-        HdrFile << AMREX_SPACEDIM << '\n';
-
-        // The number of extra real parameters
-        HdrFile << num_output_real << '\n';
-
-        // Real component names
-        for (int i = 0; i < NStructReal + NumRealComps(); ++i)
-            if (write_real_comp[i])
-                HdrFile << real_comp_names[i] << '\n';
-
-        // The number of extra int parameters
-        HdrFile << num_output_int << '\n';
-
-        // int component names
-        for (int i = 0; i < NStructInt + NumIntComps(); ++i)
-            if (write_int_comp[i])
-                HdrFile << int_comp_names[i] << '\n';
-
-        bool is_checkpoint = true; // legacy
-        HdrFile << is_checkpoint << '\n';
-
-        // The total number of particles.
-        HdrFile << nparticles << '\n';
-
-        // The value of nextid that we need to restore on restart.
-        HdrFile << maxnextid << '\n';
-
-        // Then the finest level of the AMR hierarchy.
-        HdrFile << finestLevel() << '\n';
-
-        // Then the number of grids at each level.
-        for (int lev = 0; lev <= finestLevel(); lev++)
-            HdrFile << ParticleBoxArray(lev).size() << '\n';
+    err = ncmpi_inq_put_size(ncid, &putsize_old);
+    if (err != NC_NOERR){
+        putsize_old = 0;
     }
 
-    // We want to write the data out in parallel.
-    // We'll allow up to nOutFiles active writers at a time.
-    int nOutFiles(256);
+    err = ncmpi_redef(ncid);
+    if (err != NC_NOERR && err != NC_EINDEFINE){
+        amrex::Error("ncmpi_redef fail");
+    }
 
-    ParmParse pp("particles");
-    pp.query("particles_nfiles", nOutFiles);
-    if (nOutFiles == -1)
-        nOutFiles = NProcs;
-    nOutFiles = std::max(1, std::min(nOutFiles, NProcs));
-    nOutFilesPrePost = nOutFiles;
+    // Define dim
+    sprintf(name, "particle_%s_nlvl", name.c_str());
+    err = ncmpi_def_dim(ncid, name, ((MPI_Offset)finestLevel()) + 1, dimids);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+
+    // Define var
+    sprintf(name, "particle_%s_levels", name.c_str());
+    err = ncmpi_def_var(ncid, name, NC_INT, 1, dimids, &varid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
+    //varids = (int*)malloc((finestLevel() + 1) * sizeof(int));
+    //for (i = 0; i <= finestLevel(); i++) {
+    //
+    //}
+
+    // Scalar att
+    if (sizeof(typename ParticleType::RealType) == 4) {
+        sprintf(name, "%s_single", ParticleType::Version().c_str());
+    }
+    else {
+        sprintf(name, "%s_double", ParticleType::Version().c_str());
+    }
+    err = ncmpi_put_att_text(ncid, varid, "version", strlen(name), name);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    i = AMREX_SPACEDIM;
+    err = ncmpi_put_att_int(ncid, varid, "AMREX_SPACEDIM", NC_INT, 1, &i);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    err = ncmpi_put_att_int(ncid, varid, "num_output_real", NC_INT, 1, &num_output_real);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    for (int i = 0; i < NStructReal + NumRealComps(); ++i) {
+        if (write_real_comp[i]) {
+            sprintf(name, "real_comp_names_%d", i);
+            err = ncmpi_put_att_text(ncid, varid, name, real_comp_names[i].size(), real_comp_names[i].c_str());
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_put_att_text fail");
+            }
+        }
+    }
+
+    err = ncmpi_put_att_int(ncid, varid, "num_output_int", NC_INT, 1, &num_output_int);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    for (int i = 0; i < NStructInt + NumIntComps(); ++i) {
+        if (write_int_comp[i]) {
+            sprintf(name, "int_comp_names_%d", i);
+            err = ncmpi_put_att_text(ncid, varid, name, int_comp_names[i].size(), int_comp_names[i].c_str());
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_put_att_text fail");
+            }
+        }
+    }
+
+    i = 1;
+    err = ncmpi_put_att_int(ncid, varid, "is_checkpoint", NC_INT, 1, &i);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    err = ncmpi_put_att_int(ncid, varid, "nparticles", NC_INT, 1, &nparticles);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    err = ncmpi_put_att_int(ncid, varid, "maxnextid", NC_INT, 1, &maxnextid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    i = finestLevel();
+    err = ncmpi_put_att_int(ncid, varid, "finestLevel", NC_INT, 1, &i);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    for (i = 0; i <= finestLevel(); i++) {
+        j = ParticleBoxArray(i).size();
+        sprintf(name, "ngrids_%d", i);
+        err = ncmpi_put_att_int(ncid, varid, name, NC_INT, 1, &j);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_put_att_int fail");
+        }
+    }
 
     for (int lev = 0; lev <= finestLevel(); lev++)
     {
@@ -2780,25 +2792,6 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
 
         // We store the particles at each level in their own subdirectory.
         std::string LevelDir = pdir;
-
-        if (gotsome)
-        {
-            if (!LevelDir.empty() && LevelDir[LevelDir.size() - 1] != '/')
-                LevelDir += '/';
-
-            LevelDir = amrex::Concatenate(LevelDir + "Level_", lev, 1);
-
-            if (!levelDirectoriesCreated)
-            {
-                if (ParallelDescriptor::IOProcessor())
-                    if (!amrex::UtilCreateDirectory(LevelDir, 0755))
-                        amrex::CreateDirectoryFailed(LevelDir);
-                //
-                // Force other processors to wait until directory is built.
-                //
-                ParallelDescriptor::Barrier();
-            }
-        }
 
         // Write out the header for each particle
         if (gotsome and ParallelDescriptor::IOProcessor())
@@ -2845,7 +2838,7 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
                 // Do it grid block by grid block remembering the seek offset
                 // for the start of writing of each block of data.
                 //
-                WriteParticles(lev, myStream, nfi.FileNumber(), which, count, where,
+                WriteParticles_PNC(lev, myStream, nfi.FileNumber(), which, count, where,
                                write_real_comp, write_int_comp);
             }
 
@@ -3507,6 +3500,268 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
     CheckpointPost();
 }
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF) && 0
+template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
+void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WriteParticles_PNC (   int lev, int ncid, const std::string& name, &varid, const Vector<int>& write_real_comp,
+                                                                                                const Vector<int>& write_int_comp) const {
+    int i, j;
+    int ngrid;
+    int npartical;
+    vector<int> nparticals(ParallelDescriptor::NProcs());
+    int cvarid, ivard, rvarid;
+    int dimids[4];
+    MPI_Offset st[2], ct[2];
+
+    const int iChunkSize = 2 + NStructInt + NArrayInt;
+    const int rChunkSize = AMREX_SPACEDIM + NStructReal + NumRealComps();
+
+    MFInfo info;
+    info.SetAlloc(false);
+    MultiFab state(ParticleBoxArray(lev), ParticleDistributionMap(lev), 1,0,info);
+    
+    ngrid = state.size();
+    std::Vector<int> count(ngrid, 0);
+    std::Vector<int> off(ngrid + 1, 0);
+
+    // For a each grid, the tiles it contains
+    std::map<int, Vector<int> > tile_map;
+
+    for (const auto& kv : m_particles[lev])
+    {
+        const int grid = kv.first.first;
+        const int tile = kv.first.second;
+        tile_map[grid].push_back(tile);
+
+        // Only write out valid particles.
+        int cnt = 0;	
+        for (int k = 0; k < kv.second.GetArrayOfStructs().size(); ++k)
+        {
+            const ParticleType& p = kv.second.GetArrayOfStructs()[k];
+            if (p.m_idata.id > 0) {
+                    cnt++;
+            }	    
+        }
+
+        count[grid] += cnt;
+    }
+    ParallelDescriptor::ReduceIntSum(count.data(), count.size());
+    off[0] = 0;
+    for(i = 0; i < ngrid; i++){
+        off[i + 1] = count[i] + off[i];
+    }
+
+    ncmpi_redef(ncid);
+
+    // Define dim
+    sprintf(name, "pc_%s_lvl_%d_nparticle", name.c_str(), lvl);
+    err = ncmpi_def_dim(ncid, name, (MPI_Offset)off[ngrid], dimids + 0);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids + 0);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+    dimids[2] = dimids[0];
+
+    sprintf(name, "pc_%s_iChunkSize", name.c_str());
+    err = ncmpi_def_dim(ncid, name, (MPI_Offset)iChunkSize, dimids + 1);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+
+    sprintf(name, "pc_%s_rChunkSize", name.c_str());
+    err = ncmpi_def_dim(ncid, name, (MPI_Offset)rChunkSize, dimids + 3);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids + 3);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+
+    sprintf(name, "pc_%s_lvl_%d_ngrid", name.c_str(), lvl);
+    err = ncmpi_def_dim(ncid, name, (MPI_Offset)ngrid, dimids + 4);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids + 4);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }   
+
+    // Define var
+    sprintf(name, "pc_%s_lvl_%d_count", name.c_str());
+    err = ncmpi_def_var(ncid, name, NC_INT, 1, dimids + 4, &cvarid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
+    *varid = cvarid;
+
+    sprintf(name, "pc_%s_lvl_%d_icomp", name.c_str());
+    err = ncmpi_def_var(ncid, name, NC_INT, 2, dimids, &ivarid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
+
+    sprintf(name, "pc_%s_lvl_%d_rcomp", name.c_str());
+#ifdef BL_USE_FLOAT
+    err = ncmpi_def_var(ncid, name, NC_FLOAT, 2, dimids + 2, &rvarid);
+#else
+    err = ncmpi_def_var(ncid, name, NC_DOUBLE, 2, dimids + 2, &rvarid);
+#endif
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
+
+    // Attributes
+    err = ncmpi_put_att_int(ncid, cvarid, "ngrid", NC_INT, 1, &(off[ngrid]));
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+    err = ncmpi_put_att_int(ncid, cvarid, "icomp_varid", NC_INT, 1, &ivarid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+    err = ncmpi_put_att_int(ncid, cvarid, "rcomp_varid", NC_INT, 1, &rvarid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+
+    // Post I/O
+    if (ParallelDescriptor::MyProc() == 0){
+        err = ncmpi_iput_vara_int(ncid, cvarid, st, ct, count.data(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_int fail");
+        }
+    }
+
+    std::Vector<std::Vector<int>> istuffs(ngrid);
+    std::Vector<std::Vector<int>> rstuffs(ngrid);
+
+    for (MFIter mfi(state); mfi.isValid(); ++mfi){
+        const int grid = mfi.index();
+        
+        if (count[grid] == 0) continue;
+      
+        // Collect int components
+        istuffs[grid] = Vector<int>(count[grid] * iChunkSize);
+        int* iptr = istuffs[i].dataPtr();
+        for (unsigned i = 0; i < tile_map[grid].size(); i++) {
+            const auto& pbox = m_particles[lev].at(std::make_pair(grid, tile_map[grid][i]));
+            for (int pindex = 0; pindex < pbox.GetArrayOfStructs().size(); ++pindex) {
+                const ParticleType& p = pbox.GetArrayOfStructs()[pindex];
+                if (p.m_idata.id > 0)
+                {
+                    // always write these
+                    for (int j = 0; j < 2; j++) iptr[j] = p.m_idata.arr[j];
+                    iptr += 2;
+                    
+                    // optionally write these
+                    for (int j = 0; j < NStructInt; j++)
+                    {
+                        //if (write_int_comp[j])
+                        //{
+                            *iptr = p.m_idata.arr[2+j];
+                            ++iptr;
+                        //}
+                    }
+                    
+                    const auto& soa  = pbox.GetStructOfArrays();
+                    for (int j = 0; j < NArrayInt; j++)
+                    {
+                        //if (write_int_comp[NStructInt+j])
+                        //{
+                            *iptr = soa.GetIntData(j)[pindex];
+                            ++iptr;
+                        //}
+                    }
+                }
+            }
+        }
+
+        st[0] = off[grid];
+        st[1] = 0;
+        ct[0] = count[grid];
+        ct[1] = iChunkSize;
+        err = ncmpi_iput_vara_int(ncid, ivarid, start, count, istuffs[i].dataPtr(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_int fail");
+        }
+        
+        // Collect real components
+        rstuffs[i] = Vector<typename ParticleType::RealType> rstuff(count[grid]*rChunkSize);
+        typename ParticleType::RealType* rptr = rstuffs[i].dataPtr();
+        for (unsigned i = 0; i < tile_map[grid].size(); i++) {
+            const auto& pbox = m_particles[lev].at(std::make_pair(grid, tile_map[grid][i]));
+            for (int pindex = 0; pindex < pbox.GetArrayOfStructs().size(); ++pindex) {
+                const ParticleType& p = pbox.GetArrayOfStructs()[pindex];
+                if (p.m_idata.id > 0)
+                {
+                    // always write these
+                    for (int j = 0; j < AMREX_SPACEDIM; j++) rptr[j] = p.m_rdata.arr[j];
+                    rptr += AMREX_SPACEDIM;
+                    
+                    // optionally write these
+                    for (int j = 0; j < NStructReal; j++)
+                    {
+                        //if (write_real_comp[j])
+                        //{
+                            *rptr = p.m_rdata.arr[AMREX_SPACEDIM+j];
+                            ++rptr;
+                        //}
+                    }
+                    
+                    const auto& soa  = pbox.GetStructOfArrays();
+                    for (int j = 0; j < NumRealComps(); j++)
+                    {
+                        //if (write_real_comp[NStructReal+j])
+                        //{
+                            *rptr = (typename ParticleType::RealType) soa.GetRealData(j)[pindex];
+                            ++rptr;
+                        //}
+                    }
+                }
+            }
+        }
+
+        st[0] = off[grid];
+        st[1] = 0;
+        ct[0] = count[grid];
+        ct[1] = rChunkSize;
+#ifdef BL_USE_FLOAT
+        err = ncmpi_iput_vara_float(ncid, ivarid, start, count, rstuffs[i].dataPtr(), NULL);
+#else
+        err = ncmpi_iput_vara_double(ncid, ivarid, start, count, rstuffs[i].dataPtr(), NULL);
+#endif
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iput_vara_int fail");
+        }       
+    }
+
+    err = ncmpi_enddef(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_enddef fail");
+    }
+
+    err = ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_wait_all fail");
+    }
+}
+#endif
 
 template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
 void
