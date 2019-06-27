@@ -461,9 +461,7 @@ BoxArray::readFrom (std::istream& is)
 }
 
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
-int
-BoxArray::readFrom (int ncid, int varid)
-{
+int BoxArray::readFrom_PNC (int ncid, int varid) {
     int err;
     int i;
     int nFABs;
@@ -512,6 +510,120 @@ BoxArray::readFrom (int ncid, int varid)
 
     return 0;
 }
+
+int BoxArray::writeOn_PNC (int ncid, int varid, std::string &mf_name) const{
+    int err;
+    int i;
+    int nFABs;
+    int varids[2];
+    int dimids[2];
+    MPI_Offset start[2], count[2];
+    char name[1024];
+
+    nFABs = size();
+
+    err = ncmpi_redef(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_redef fail");
+    }
+
+    // Define dimensions
+    sprintf(name, "%s_nfab", mf_name.c_str());
+    err = ncmpi_def_dim(ncid, name, (MPI_Offset)nFABs, dimids);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+
+    sprintf(name, "AMREX_SPACEDIM");
+    err = ncmpi_def_dim(ncid, name, AMREX_SPACEDIM, dimids + 1);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, dimids + 1);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_dim fail");
+    }
+
+    // Define variables
+    sprintf(name, "%s_box_lo", mf_name.c_str());
+    err = ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, varids);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
+
+    sprintf(name, "%s_box_hi", mf_name.c_str());
+    err = ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 1);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, varids + 1);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_def_var fail");
+    }
+
+    // Attributes
+    err = ncmpi_put_att_int(ncid, varid, "m_nfab", NC_INT, 1, &nFABs);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_att_int fail");
+    }
+    err = ncmpi_put_att_int(ncid, varid, "box_lo_varid", NC_INT, 1, varids);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+
+    err = ncmpi_put_att_int(ncid, varid, "box_hi_varid", NC_INT, 1, varids + 1);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+
+    start[1] = 0;
+    count[0] = 1;
+    count[1] = AMREX_SPACEDIM;
+
+    if (ParallelDescriptor::IOProcessor()){
+        for(i = 0; i < nFABs; i++){
+            start[0] = i;
+            err = ncmpi_iput_vara_int(ncid, varids[0], start, count, (int*)(m_ref->m_abox[i].loVect()), NULL);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_iget_vara_int fail");
+            }  
+
+            err = ncmpi_iput_vara_int(ncid, varids[1], start, count, (int*)(m_ref->m_abox[i].hiVect()), NULL);
+            if (err != NC_NOERR){
+                amrex::Error("ncmpi_iget_vara_int fail");
+            }  
+        }
+    }
+
+    err = ncmpi_enddef(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_enddef fail");
+    }
+
+    err = ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_wait_all fail");
+    }  
+
+    return NC_NOERR;
+}
+
 #endif
 
 std::ostream&

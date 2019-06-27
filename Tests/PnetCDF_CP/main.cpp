@@ -179,8 +179,9 @@ int main(int argc, char* argv[])
             particle_intnames.push_back("particle_int_component_" + std::to_string(i));
         }
         
-        myPC.Checkpoint("plt00000", "particle0", false, particle_realnames, particle_intnames);
-        
+        ncmpi_create(MPI_COMM_WORLD, "particle.nc", 0, MPI_INFO_NULL, &ncid);
+        myPC.Checkpoint_PNC(ncid, "pc0", false, particle_realnames, particle_intnames);
+        ncmpi_close(ncid);
     }
 
     amrex::Finalize(); 

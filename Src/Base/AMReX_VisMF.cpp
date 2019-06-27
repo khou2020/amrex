@@ -1087,7 +1087,7 @@ VisMF::WriteHeader_PNC (int ncid,
     sprintf(name, "%s_box_lo", mf_name.c_str());
     err = ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 4);
     if (err == NC_ENAMEINUSE){
-        err = ncmpi_inq_varid(ncid, name, &varid);
+        err = ncmpi_inq_varid(ncid, name, varids + 4);
         if (err != NC_NOERR){
             amrex::Error("ncmpi_inq_varid fail");
         }
@@ -1099,7 +1099,7 @@ VisMF::WriteHeader_PNC (int ncid,
     sprintf(name, "%s_box_hi", mf_name.c_str());
     err = ncmpi_def_var(ncid, name, NC_INT, 2, dimids, varids + 5);
     if (err == NC_ENAMEINUSE){
-        err = ncmpi_inq_varid(ncid, name, &varid);
+        err = ncmpi_inq_varid(ncid, name, varids + 5);
         if (err != NC_NOERR){
             amrex::Error("ncmpi_inq_varid fail");
         }
@@ -2711,7 +2711,7 @@ VisMF::Read_PNC(int ncid,
         amrex::Error("ncmpi_wait_all fail");
     }  
 
-    hdr.m_ba.readFrom(ncid, varid);
+    hdr.m_ba.readFrom_PNC(ncid, varid);
 
     // Construct multifab
     if (mf.empty()) {

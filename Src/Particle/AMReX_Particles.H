@@ -60,6 +60,10 @@
 #include <thrust/gather.h>
 #endif
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+    #include <pnetcdf.h>
+#endif
+
 namespace amrex {
 
 /**
@@ -538,14 +542,25 @@ public:
     void Checkpoint (const std::string& dir, const std::string& name, bool is_checkpoint,
                      const Vector<std::string>& real_comp_names = Vector<std::string>(),
                      const Vector<std::string>& int_comp_names = Vector<std::string>()) const;
-    
+
     void WriteBinaryParticleData (const std::string& dir,
                                   const std::string& name,
                                   const Vector<int>& write_real_comp,
                                   const Vector<int>& write_int_comp,    
                                   const Vector<std::string>& real_comp_names,
                                   const Vector<std::string>&  int_comp_names) const;
-    
+
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+    void Checkpoint_PNC (int ncid, const std::string& name, bool is_checkpoint,
+                     const Vector<std::string>& real_comp_names = Vector<std::string>(),
+                     const Vector<std::string>& int_comp_names = Vector<std::string>()) const;
+    void WriteBinaryParticleData_PNC (int lev, const std::string& pcname, 
+                                  const Vector<int>& write_real_comp,
+                                  const Vector<int>& write_int_comp,    
+                                  const Vector<std::string>& real_comp_names,
+                                  const Vector<std::string>&  int_comp_names) const;
+#endif
+
     void CheckpointPre ();
 
     void CheckpointPost ();
@@ -813,6 +828,11 @@ protected:
     void WriteParticles (int level, std::ofstream& ofs, int fnum,
                          Vector<int>& which, Vector<int>& count, Vector<long>& where,
                          const Vector<int>& write_real_comp, const Vector<int>& write_int_comp) const;
+
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+    void WriteParticles_PNC(int level, int ncid, const std::string& pcname, int *varid,
+                         const Vector<int>& write_real_comp, const Vector<int>& write_int_comp) const;
+#endif
 
     template <class RTYPE>
     void ReadParticles (int cnt, int grd, int lev, std::ifstream& ifs, int finest_level_in_file);

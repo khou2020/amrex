@@ -2566,7 +2566,7 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
     
 }
 
-#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF) && 0
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
 template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
 void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::Checkpoint_PNC(int ncid,
                                                                                        const std::string &name, bool is_checkpoint,
@@ -2614,7 +2614,7 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::Checkpoi
 template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
 void
 ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
-::WriteBinaryParticleData_PNC (int ncid, const std::string& name,
+::WriteBinaryParticleData_PNC (int ncid, const std::string& pcname,
                            const Vector<int>& write_real_comp,
                            const Vector<int>& write_int_comp,
                            const Vector<std::string>& real_comp_names,
@@ -2622,16 +2622,20 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
 {
     int err;
     int i, j;
-    int mhow;
     int varid;
-    int *varids;
-    int dimids[3];
-    MPI_Offset start[2], count[2];
+    int dimid;
     MPI_Offset putsize, putsize_old;
     int num_output_real = 0;
     int num_output_int = 0;
     char name[1024];
 
+    const int rank = ParallelDescriptor::MyProc();
+    const int np = ParallelDescriptor::NProcs();
+    const int IOProcNumber = ParallelDescriptor::IOProcessorNumber();
+        
+    int nparticles = 0;
+    int maxnextid;
+    
     if (usePrePost)
     {
         nparticles = nparticlesPrePost;
@@ -2658,16 +2662,15 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
             }
         }
 
-        ParallelDescriptor::ReduceLongSum(nparticles, IOProcNumber);
+        ParallelDescriptor::ReduceIntSum(nparticles, IOProcNumber);
         ParticleType::NextID(maxnextid);
         ParallelDescriptor::ReduceIntMax(maxnextid, IOProcNumber);
     }
-
     
-    for (int i = 0; i < NumRealComps() + NStructReal; ++i)
+    for (i = 0; i < NumRealComps() + NStructReal; ++i)
         if (write_real_comp[i])
             ++num_output_real;
-    for (int i = 0; i < NumIntComps() + NStructInt; ++i)
+    for (i = 0; i < NumIntComps() + NStructInt; ++i)
         if (write_int_comp[i])
             ++num_output_int;
 
@@ -2682,22 +2685,30 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
     }
 
     // Define dim
-    sprintf(name, "particle_%s_nlvl", name.c_str());
-    err = ncmpi_def_dim(ncid, name, ((MPI_Offset)finestLevel()) + 1, dimids);
-    if (err != NC_NOERR){
+    sprintf(name, "particle_%s_nlvl", pcname.c_str());
+    err = ncmpi_def_dim(ncid, name, ((MPI_Offset)finestLevel()) + 1, &dimid);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_dimid(ncid, name, &dimid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_dimid fail");
+        }
+    }
+    else if (err != NC_NOERR){
         amrex::Error("ncmpi_def_dim fail");
     }
 
     // Define var
-    sprintf(name, "particle_%s_levels", name.c_str());
-    err = ncmpi_def_var(ncid, name, NC_INT, 1, dimids, &varid);
-    if (err != NC_NOERR){
+    sprintf(name, "particle_%s_levels", pcname.c_str());
+    err = ncmpi_def_var(ncid, name, NC_INT, 1, &dimid, &varid);
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, &varid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
         amrex::Error("ncmpi_def_var fail");
     }
-    //varids = (int*)malloc((finestLevel() + 1) * sizeof(int));
-    //for (i = 0; i <= finestLevel(); i++) {
-    //
-    //}
 
     // Scalar att
     if (sizeof(typename ParticleType::RealType) == 4) {
@@ -2722,7 +2733,7 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
         amrex::Error("ncmpi_put_att_int fail");
     }
 
-    for (int i = 0; i < NStructReal + NumRealComps(); ++i) {
+    for (i = 0; i < NStructReal + NumRealComps(); ++i) {
         if (write_real_comp[i]) {
             sprintf(name, "real_comp_names_%d", i);
             err = ncmpi_put_att_text(ncid, varid, name, real_comp_names[i].size(), real_comp_names[i].c_str());
@@ -2737,7 +2748,7 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
         amrex::Error("ncmpi_put_att_int fail");
     }
 
-    for (int i = 0; i < NStructInt + NumIntComps(); ++i) {
+    for (i = 0; i < NStructInt + NumIntComps(); ++i) {
         if (write_int_comp[i]) {
             sprintf(name, "int_comp_names_%d", i);
             err = ncmpi_put_att_text(ncid, varid, name, int_comp_names[i].size(), int_comp_names[i].c_str());
@@ -2778,145 +2789,37 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
         }
     }
 
-    for (int lev = 0; lev <= finestLevel(); lev++)
-    {
+    Vector<int>varids(finestLevel() + 1);
+    for (int lev = 0; lev <= finestLevel(); lev++){
         bool gotsome;
-        if (usePrePost)
-        {
+        if (usePrePost){
             gotsome = (nParticlesAtLevelPrePost[lev] > 0);
         }
-        else
-        {
+        else{
             gotsome = (NumberOfParticlesAtLevel(lev) > 0);
         }
 
-        // We store the particles at each level in their own subdirectory.
-        std::string LevelDir = pdir;
-
-        // Write out the header for each particle
-        if (gotsome and ParallelDescriptor::IOProcessor())
-        {
-            std::string HeaderFileName = LevelDir;
-            HeaderFileName += "/Particle_H";
-            std::ofstream ParticleHeader(HeaderFileName);
-
-            ParticleBoxArray(lev).writeOn(ParticleHeader);
-            ParticleHeader << '\n';
-
-            ParticleHeader.flush();
-            ParticleHeader.close();
-        }
-
-        MFInfo info;
-        info.SetAlloc(false);
-        MultiFab state(ParticleBoxArray(lev),
-                       ParticleDistributionMap(lev),
-                       1, 0, info);
-
-        // We eventually want to write out the file name and the offset
-        // into that file into which each grid of particles is written.
-        Vector<int> which(state.size(), 0);
-        Vector<int> count(state.size(), 0);
-        Vector<long> where(state.size(), 0);
-
-        std::string filePrefix(LevelDir);
-        filePrefix += '/';
-        filePrefix += ParticleType::DataPrefix();
-        if (usePrePost)
-        {
-            filePrefixPrePost[lev] = filePrefix;
-        }
-        bool groupSets(false), setBuf(true);
-
-        if (gotsome)
-        {
-            for (NFilesIter nfi(nOutFiles, filePrefix, groupSets, setBuf); nfi.ReadyToWrite(); ++nfi)
-            {
-                std::ofstream &myStream = (std::ofstream &)nfi.Stream();
-                //
-                // Write out all the valid particles we own at the specified level.
-                // Do it grid block by grid block remembering the seek offset
-                // for the start of writing of each block of data.
-                //
-                WriteParticles_PNC(lev, myStream, nfi.FileNumber(), which, count, where,
-                               write_real_comp, write_int_comp);
-            }
-
-            if (usePrePost)
-            {
-                whichPrePost[lev] = which;
-                countPrePost[lev] = count;
-                wherePrePost[lev] = where;
-            }
-            else
-            {
-                ParallelDescriptor::ReduceIntSum(which.dataPtr(), which.size(), IOProcNumber);
-                ParallelDescriptor::ReduceIntSum(count.dataPtr(), count.size(), IOProcNumber);
-                ParallelDescriptor::ReduceLongSum(where.dataPtr(), where.size(), IOProcNumber);
-            }
-        }
-
-        if (ParallelDescriptor::IOProcessor())
-        {
-            if (usePrePost)
-            {
-                // ---- write to the header and unlink in CheckpointPost
-            }
-            else
-            {
-                for (int j = 0; j < state.size(); j++)
-                {
-                    //
-                    // We now write the which file, the particle count, and the
-                    // file offset into which the data for each grid was written,
-                    // to the header file.
-                    //
-                    HdrFile << which[j] << ' ' << count[j] << ' ' << where[j] << '\n';
-                }
-
-                if (gotsome && doUnlink)
-                {
-                    //		BL_PROFILE_VAR("PC<NNNN>::Checkpoint:unlink", unlink);
-                    //
-                    // Unlink any zero-length data files.
-                    //
-                    Vector<long> cnt(nOutFiles, 0);
-
-                    for (int i = 0, N = count.size(); i < N; i++)
-                    {
-                        cnt[which[i]] += count[i];
-                    }
-
-                    for (int i = 0, N = cnt.size(); i < N; i++)
-                    {
-                        if (cnt[i] == 0)
-                        {
-                            std::string FullFileName = NFilesIter::FileName(i, filePrefix);
-                            amrex::UnlinkFile(FullFileName.c_str());
-                        }
-                    }
-                }
-            }
+        if (gotsome){
+            sprintf(name, "%s_lvl%d_ba", pcname.c_str(), lev);
+            std::string baname(name);
+            WriteParticles_PNC(lev, ncid, pcname, &(varids[lev]), write_real_comp, write_int_comp);
+            ParticleBoxArray(lev).writeOn_PNC(ncid, varids[lev], baname);
         }
     } // ---- end for(lev...)
 
-    if (ParallelDescriptor::IOProcessor())
-    {
-        HdrFile.flush();
-        HdrFile.close();
-        if (!HdrFile.good())
-        {
-            amrex::Abort("ParticleContainer::Checkpoint(): problem writing HdrFile");
-        }
+    err = ncmpi_begin_indep_data(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_begin_indep_data fail");
     }
 
-    if (m_verbose > 1)
-    {
-        Real stoptime = amrex::second() - strttime;
+    err = ncmpi_put_var_int(ncid, varid, varids.dataPtr());
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_put_vara_int_all fail");
+    }
 
-        ParallelDescriptor::ReduceRealMax(stoptime, IOProcNumber);
-
-        amrex::Print() << "ParticleContainer::Checkpoint() time: " << stoptime << '\n';
+    err = ncmpi_end_indep_data(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_end_indep_data fail");
     }
 }
 #endif
@@ -3500,17 +3403,22 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
     CheckpointPost();
 }
 
-#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF) && 0
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
 template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
-void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WriteParticles_PNC (   int lev, int ncid, const std::string& name, &varid, const Vector<int>& write_real_comp,
+void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WriteParticles_PNC (   int lev, int ncid, const std::string& pcname, int *varid, const Vector<int>& write_real_comp,
                                                                                                 const Vector<int>& write_int_comp) const {
+    int err;                                                                                                    
     int i, j;
     int ngrid;
     int npartical;
-    vector<int> nparticals(ParallelDescriptor::NProcs());
-    int cvarid, ivard, rvarid;
+    int cvarid, ivarid, rvarid;
     int dimids[4];
     MPI_Offset st[2], ct[2];
+    char name[1024];
+
+    const int rank = ParallelDescriptor::MyProc();
+    const int np = ParallelDescriptor::NProcs();
+    const int IOProcNumber = ParallelDescriptor::IOProcessorNumber();
 
     const int iChunkSize = 2 + NStructInt + NArrayInt;
     const int rChunkSize = AMREX_SPACEDIM + NStructReal + NumRealComps();
@@ -3520,8 +3428,8 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
     MultiFab state(ParticleBoxArray(lev), ParticleDistributionMap(lev), 1,0,info);
     
     ngrid = state.size();
-    std::Vector<int> count(ngrid, 0);
-    std::Vector<int> off(ngrid + 1, 0);
+    Vector<int> count(ngrid, 0);
+    Vector<int> off(ngrid + 1, 0);
 
     // For a each grid, the tiles it contains
     std::map<int, Vector<int> > tile_map;
@@ -3553,7 +3461,7 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
     ncmpi_redef(ncid);
 
     // Define dim
-    sprintf(name, "pc_%s_lvl_%d_nparticle", name.c_str(), lvl);
+    sprintf(name, "pc_%s_lvl_%d_nparticle", pcname.c_str(), lev);
     err = ncmpi_def_dim(ncid, name, (MPI_Offset)off[ngrid], dimids + 0);
     if (err == NC_ENAMEINUSE){
         err = ncmpi_inq_dimid(ncid, name, dimids + 0);
@@ -3566,7 +3474,7 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
     }
     dimids[2] = dimids[0];
 
-    sprintf(name, "pc_%s_iChunkSize", name.c_str());
+    sprintf(name, "pc_%s_iChunkSize", pcname.c_str());
     err = ncmpi_def_dim(ncid, name, (MPI_Offset)iChunkSize, dimids + 1);
     if (err == NC_ENAMEINUSE){
         err = ncmpi_inq_dimid(ncid, name, dimids);
@@ -3578,7 +3486,7 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
         amrex::Error("ncmpi_def_dim fail");
     }
 
-    sprintf(name, "pc_%s_rChunkSize", name.c_str());
+    sprintf(name, "pc_%s_rChunkSize", pcname.c_str());
     err = ncmpi_def_dim(ncid, name, (MPI_Offset)rChunkSize, dimids + 3);
     if (err == NC_ENAMEINUSE){
         err = ncmpi_inq_dimid(ncid, name, dimids + 3);
@@ -3590,7 +3498,7 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
         amrex::Error("ncmpi_def_dim fail");
     }
 
-    sprintf(name, "pc_%s_lvl_%d_ngrid", name.c_str(), lvl);
+    sprintf(name, "pc_%s_lvl_%d_ngrid", pcname.c_str(), lev);
     err = ncmpi_def_dim(ncid, name, (MPI_Offset)ngrid, dimids + 4);
     if (err == NC_ENAMEINUSE){
         err = ncmpi_inq_dimid(ncid, name, dimids + 4);
@@ -3603,26 +3511,44 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
     }   
 
     // Define var
-    sprintf(name, "pc_%s_lvl_%d_count", name.c_str());
+    sprintf(name, "pc_%s_lvl_%d_count", pcname.c_str(), lev);
     err = ncmpi_def_var(ncid, name, NC_INT, 1, dimids + 4, &cvarid);
-    if (err != NC_NOERR){
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, &cvarid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
         amrex::Error("ncmpi_def_var fail");
     }
     *varid = cvarid;
 
-    sprintf(name, "pc_%s_lvl_%d_icomp", name.c_str());
+    sprintf(name, "pc_%s_lvl_%d_icomp", pcname.c_str(), lev);
     err = ncmpi_def_var(ncid, name, NC_INT, 2, dimids, &ivarid);
-    if (err != NC_NOERR){
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, &ivarid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
         amrex::Error("ncmpi_def_var fail");
     }
 
-    sprintf(name, "pc_%s_lvl_%d_rcomp", name.c_str());
+    sprintf(name, "pc_%s_lvl_%d_rcomp", pcname.c_str(), lev);
 #ifdef BL_USE_FLOAT
     err = ncmpi_def_var(ncid, name, NC_FLOAT, 2, dimids + 2, &rvarid);
 #else
     err = ncmpi_def_var(ncid, name, NC_DOUBLE, 2, dimids + 2, &rvarid);
 #endif
-    if (err != NC_NOERR){
+    if (err == NC_ENAMEINUSE){
+        err = ncmpi_inq_varid(ncid, name, &rvarid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_inq_varid fail");
+        }
+    }
+    else if (err != NC_NOERR){
         amrex::Error("ncmpi_def_var fail");
     }
 
@@ -3641,15 +3567,15 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
     }
 
     // Post I/O
-    if (ParallelDescriptor::MyProc() == 0){
-        err = ncmpi_iput_vara_int(ncid, cvarid, st, ct, count.data(), NULL);
+    if (rank == IOProcNumber){
+        err = ncmpi_iput_var_int(ncid, cvarid, count.data(), NULL);
         if (err != NC_NOERR){
             amrex::Error("ncmpi_iput_vara_int fail");
         }
     }
 
-    std::Vector<std::Vector<int>> istuffs(ngrid);
-    std::Vector<std::Vector<int>> rstuffs(ngrid);
+    Vector<Vector<int>> istuffs(ngrid);
+    Vector<Vector<typename ParticleType::RealType>> rstuffs(ngrid);
 
     for (MFIter mfi(state); mfi.isValid(); ++mfi){
         const int grid = mfi.index();
@@ -3658,19 +3584,19 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
       
         // Collect int components
         istuffs[grid] = Vector<int>(count[grid] * iChunkSize);
-        int* iptr = istuffs[i].dataPtr();
-        for (unsigned i = 0; i < tile_map[grid].size(); i++) {
+        int* iptr = istuffs[grid].dataPtr();
+        for (i = 0; i < tile_map[grid].size(); i++) {
             const auto& pbox = m_particles[lev].at(std::make_pair(grid, tile_map[grid][i]));
             for (int pindex = 0; pindex < pbox.GetArrayOfStructs().size(); ++pindex) {
                 const ParticleType& p = pbox.GetArrayOfStructs()[pindex];
                 if (p.m_idata.id > 0)
                 {
                     // always write these
-                    for (int j = 0; j < 2; j++) iptr[j] = p.m_idata.arr[j];
+                    for (j = 0; j < 2; j++) iptr[j] = p.m_idata.arr[j];
                     iptr += 2;
                     
                     // optionally write these
-                    for (int j = 0; j < NStructInt; j++)
+                    for (j = 0; j < NStructInt; j++)
                     {
                         //if (write_int_comp[j])
                         //{
@@ -3680,7 +3606,7 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
                     }
                     
                     const auto& soa  = pbox.GetStructOfArrays();
-                    for (int j = 0; j < NArrayInt; j++)
+                    for (j = 0; j < NArrayInt; j++)
                     {
                         //if (write_int_comp[NStructInt+j])
                         //{
@@ -3696,26 +3622,26 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
         st[1] = 0;
         ct[0] = count[grid];
         ct[1] = iChunkSize;
-        err = ncmpi_iput_vara_int(ncid, ivarid, start, count, istuffs[i].dataPtr(), NULL);
+        err = ncmpi_iput_vara_int(ncid, ivarid, st, ct, istuffs[grid].dataPtr(), NULL);
         if (err != NC_NOERR){
             amrex::Error("ncmpi_iput_vara_int fail");
         }
         
         // Collect real components
-        rstuffs[i] = Vector<typename ParticleType::RealType> rstuff(count[grid]*rChunkSize);
-        typename ParticleType::RealType* rptr = rstuffs[i].dataPtr();
-        for (unsigned i = 0; i < tile_map[grid].size(); i++) {
+        rstuffs[grid] = Vector<typename ParticleType::RealType>(count[grid]*rChunkSize);
+        typename ParticleType::RealType* rptr = rstuffs[grid].dataPtr();
+        for (i = 0; i < tile_map[grid].size(); i++) {
             const auto& pbox = m_particles[lev].at(std::make_pair(grid, tile_map[grid][i]));
             for (int pindex = 0; pindex < pbox.GetArrayOfStructs().size(); ++pindex) {
                 const ParticleType& p = pbox.GetArrayOfStructs()[pindex];
                 if (p.m_idata.id > 0)
                 {
                     // always write these
-                    for (int j = 0; j < AMREX_SPACEDIM; j++) rptr[j] = p.m_rdata.arr[j];
+                    for (j = 0; j < AMREX_SPACEDIM; j++) rptr[j] = p.m_rdata.arr[j];
                     rptr += AMREX_SPACEDIM;
                     
                     // optionally write these
-                    for (int j = 0; j < NStructReal; j++)
+                    for (j = 0; j < NStructReal; j++)
                     {
                         //if (write_real_comp[j])
                         //{
@@ -3725,7 +3651,7 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
                     }
                     
                     const auto& soa  = pbox.GetStructOfArrays();
-                    for (int j = 0; j < NumRealComps(); j++)
+                    for (j = 0; j < NumRealComps(); j++)
                     {
                         //if (write_real_comp[NStructReal+j])
                         //{
@@ -3742,9 +3668,9 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt> ::WritePa
         ct[0] = count[grid];
         ct[1] = rChunkSize;
 #ifdef BL_USE_FLOAT
-        err = ncmpi_iput_vara_float(ncid, ivarid, start, count, rstuffs[i].dataPtr(), NULL);
+        err = ncmpi_iput_vara_float(ncid, rvarid, st, ct, rstuffs[grid].dataPtr(), NULL);
 #else
-        err = ncmpi_iput_vara_double(ncid, ivarid, start, count, rstuffs[i].dataPtr(), NULL);
+        err = ncmpi_iput_vara_double(ncid, rvarid, st, ct, rstuffs[grid].dataPtr(), NULL);
 #endif
         if (err != NC_NOERR){
             amrex::Error("ncmpi_iput_vara_int fail");
