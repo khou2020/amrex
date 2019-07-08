@@ -1387,6 +1387,43 @@ VisMF::Write (const FabArray<FArrayBox>&    mf,
 }
 
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+long VisMF::Write_PNC ( std::string &fname,
+                        const FabArray<FArrayBox>&    mf,
+                        const std::string& mf_name,
+                        bool               set_ghost) {
+    int err;
+    int ncid;
+    int create = 1;
+
+    err = ncmpi_create(MPI_COMM_WORLD, fname.c_str(), NC_NOCLOBBER, MPI_INFO_NULL, &ncid);
+    if (err == NC_EEXIST){
+        err = ncmpi_open(MPI_COMM_WORLD, fname.c_str(), NC_WRITE, MPI_INFO_NULL, &ncid);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_open fail");
+        }
+        create = 0;
+    }
+    else if (err != NC_NOERR){
+        amrex::Error("ncmpi_create fail");
+    }
+
+    if (create){
+        err = ncmpi__enddef(ncid, 10485760, 0, 0, 0);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi__enddef fail");
+        }
+    }
+
+    Write_PNC(ncid, mf, mf_name, set_ghost);
+
+    err = ncmpi_close(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_close fail");
+    }
+
+    return 0;
+}
+
 #if PNC_MF_LAYOUT==0
 long
 VisMF::Write_PNC (int ncid,
@@ -2554,8 +2591,28 @@ VisMF::Read (FabArray<FArrayBox> &mf,
 }
 
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
-void
-VisMF::Read_PNC(int ncid,
+void VisMF::Read_PNC(std::string &fname,
+             FabArray<FArrayBox> &mf,
+             const std::string   &mf_name,
+	         int allow_empty_mf) {
+    int err;
+    int ncid;
+
+    err = ncmpi_open(MPI_COMM_WORLD, fname.c_str(), NC_WRITE, MPI_INFO_NULL, &ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_open fail");
+    }
+
+    Read_PNC(ncid, mf, mf_name, allow_empty_mf);
+
+    err = ncmpi_close(ncid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_close fail");
+    }
+}
+
+
+void VisMF::Read_PNC(int ncid,
              FabArray<FArrayBox> &mf,
              const std::string   &mf_name,
 	         int allow_empty_mf)

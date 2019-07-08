@@ -4218,6 +4218,137 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
     Gpu::Device::streamSynchronize();
 }
 
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
+void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::Restart_PNC (int ncid, const std::string& pcname) {
+    int err;
+    int i;
+    int varid;
+    char name[1024];
+
+    // Inq var
+    sprintf(name, "particle_%s_levels", pcname.c_str());
+    err = ncmpi_inq_varid(ncid, name, &varid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_inq_varid fail");
+    }
+
+    // Attributes
+    std::string version;
+    MPI_Offset ver_len;
+    err = ncmpi_inq_attlen(ncid, varid, "version", &ver_len);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_inq_attlen fail");
+    }
+    err = ncmpi_get_att_text(ncid, varid, "version", version.c_str());
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_text fail");
+    }
+
+    int dm;
+    err = ncmpi_get_att_int(ncid, varid, "AMREX_SPACEDIM", &dm);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+    if (dm != AMREX_SPACEDIM)
+        amrex::Abort("ParticleContainer::Restart(): dm != AMREX_SPACEDIM");
+
+    int nr;
+    err = ncmpi_get_att_int(ncid, varid, "num_output_real", &nr);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+    if (nr != NStructReal + NumRealComps())
+        amrex::Abort("ParticleContainer::Restart(): nr != NStructReal + NumRealComps()");
+    
+    int ni;
+    err = ncmpi_get_att_int(ncid, varid, "num_output_int", &ni);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+    if (ni != NStructInt + NumIntComps())
+        amrex::Abort("ParticleContainer::Restart(): ni != NStructInt");
+    
+    bool checkpoint;
+    err = ncmpi_get_att_int(ncid, varid, "is_checkpoint", &i);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+    checkpoint = (bool)i;
+    
+    long nparticles;
+    err = ncmpi_get_att_int(ncid, varid, "nparticles", &i);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+    nparticles = (long)i;
+    BL_ASSERT(nparticles >= 0);
+    
+    int maxnextid;
+    err = ncmpi_get_att_int(ncid, varid, "maxnextid", &maxnextid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+    BL_ASSERT(maxnextid > 0);
+    ParticleType::NextID(maxnextid);
+
+    int finest_level_in_file;
+    err = ncmpi_get_att_int(ncid, varid, "finestLevel", &finest_level_in_file);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+    BL_ASSERT(finest_level_in_file >= 0);
+    
+    Vector<BoxArray> particle_box_arrays(finest_level_in_file + 1);
+    Vector<int> varids(finest_level_in_file + 1, -1);
+    for (int lev = 0; lev <= finest_level_in_file; lev++){
+        sprintf(name, "pc_%s_lvl_%d_count", pcname.c_str(), lev);
+        err = ncmpi_inq_varid(ncid, name, &(varids[lev]));
+        if (err == NC_NOERR){
+            particle_box_arrays[lev].readFrom_PNC(ncid, varids[lev]);
+
+            SetParticleBoxArray(lev, particle_box_arrays[lev]);
+            DistributionMapping pdm(particle_box_arrays[lev]);
+            SetParticleDistributionMap(lev, pdm);
+        }
+    } // ---- end for(lev...)
+
+     Vector<int> ngrids(finest_level_in_file+1);
+     for (int lev = 0; lev <= finest_level_in_file; lev++) {
+        sprintf(name, "ngrids_%d", i);
+        err = ncmpi_get_att_int(ncid, varid, name, &(ngrids[i]));
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_put_att_int fail");
+        }
+        BL_ASSERT(ngrids[lev] > 0);
+        if (lev <= finestLevel()) {
+            BL_ASSERT(ngrids[lev] == int(ParticleBoxArray(lev).size()));
+        }
+    }
+
+    // Read data
+    for (int lev = 0; lev <= finestLevel(); lev++){
+        ReadParticles_PNC(lev, ncid, pcname, varids[lev]);
+    } // ---- end for(lev...)
+    
+    resizeData();
+    
+    if (finest_level_in_file > finestLevel()) {
+        m_particles.resize(finest_level_in_file+1);
+    }
+    
+    Redistribute();
+    
+}
+
+// Read a batch of particles from the checkpoint file
+template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
+template <class RTYPE>
+void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::ReadParticles_PNC (int lev, int ncid, const std::string& pcname, int *varid) {
+ 
+}
+#endif
+
 template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
 void
 ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::WriteAsciiFile (const std::string& filename)

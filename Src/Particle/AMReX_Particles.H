@@ -575,6 +575,10 @@ public:
      */
     void Restart (const std::string& dir, const std::string& file, bool is_checkpoint);
     
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+    void Restart_PNC (int ncid, const std::string& pcname);
+#endif
+
     /**
      *  This version of WritePlotFile writes all components and assigns component names
      */
@@ -836,7 +840,12 @@ protected:
 
     template <class RTYPE>
     void ReadParticles (int cnt, int grd, int lev, std::ifstream& ifs, int finest_level_in_file);
-    
+
+#if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)   
+    template <class RTYPE>
+    void ReadParticles_PNC (int lev, int ncid, const std::string& pcname, int *varid);
+#endif
+
     void SetParticleSize ();
 
     void BuildRedistributeMask(int lev, int nghost=1) const;

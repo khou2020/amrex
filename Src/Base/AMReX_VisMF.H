@@ -183,7 +183,11 @@ public:
                        VisMF::How         how = NFiles,
                        bool               set_ghost = false);
 #ifdef BL_USE_PNETCDF
-    static long Write_PNC (int ncid,
+    static long Write_PNC(std::string &fname,
+                          const FabArray<FArrayBox> &fafab,
+                          const std::string& name,
+                          bool               set_ghost = false);
+    static long Write_PNC(int ncid,
                           const FabArray<FArrayBox> &fafab,
                           const std::string& name,
                           bool               set_ghost = false);
@@ -218,6 +222,10 @@ public:
 		      int allow_empty_mf = 0);
 
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)
+    static void Read_PNC (  std::string &fname,
+                            FabArray<FArrayBox> &mf,
+                const std::string   &mf_name,
+	            int allow_empty_mf);
     static void Read_PNC (  int ncid,
                             FabArray<FArrayBox> &mf,
                 const std::string   &mf_name,
