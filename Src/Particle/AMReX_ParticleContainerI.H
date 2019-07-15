@@ -4240,7 +4240,8 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::Restart_
     if (err != NC_NOERR){
         amrex::Error("ncmpi_inq_attlen fail");
     }
-    err = ncmpi_get_att_text(ncid, varid, "version", version.c_str());
+    version.resize(ver_len + 1);
+    err = ncmpi_get_att_text(ncid, varid, "version", (char*)version.c_str());
     if (err != NC_NOERR){
         amrex::Error("ncmpi_get_att_text fail");
     }
@@ -4315,8 +4316,8 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::Restart_
 
      Vector<int> ngrids(finest_level_in_file+1);
      for (int lev = 0; lev <= finest_level_in_file; lev++) {
-        sprintf(name, "ngrids_%d", i);
-        err = ncmpi_get_att_int(ncid, varid, name, &(ngrids[i]));
+        sprintf(name, "ngrids_%d", lev);
+        err = ncmpi_get_att_int(ncid, varid, name, &(ngrids[lev]));
         if (err != NC_NOERR){
             amrex::Error("ncmpi_put_att_int fail");
         }
@@ -4325,11 +4326,6 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::Restart_
             BL_ASSERT(ngrids[lev] == int(ParticleBoxArray(lev).size()));
         }
     }
-
-    // Read data
-    for (int lev = 0; lev <= finestLevel(); lev++){
-        ReadParticles_PNC(lev, ncid, pcname, varids[lev]);
-    } // ---- end for(lev...)
     
     resizeData();
     
@@ -4337,15 +4333,218 @@ void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::Restart_
         m_particles.resize(finest_level_in_file+1);
     }
     
+    // Read data
+    for (int lev = 0; lev <= finestLevel(); lev++){
+        ReadParticles_PNC(lev, ncid, pcname, varids[lev], finest_level_in_file);
+    } // ---- end for(lev...)
+
     Redistribute();
-    
 }
 
 // Read a batch of particles from the checkpoint file
 template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
-template <class RTYPE>
-void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::ReadParticles_PNC (int lev, int ncid, const std::string& pcname, int *varid) {
- 
+void ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>::ReadParticles_PNC (int lev, int ncid, const std::string& pcname, int varid, int finest_level_in_file) {
+    int err;
+    int i;
+    int ivarid, rvarid;
+    int ngrid, nrgrid;
+    MPI_Offset start[2], count[2];
+    
+    ngrid = (*m_dummy_mf[lev]).size();
+
+    Vector<int> len(ngrid);
+    Vector<int> off(ngrid + 1);
+
+    err = ncmpi_get_att_int(ncid, varid, "icomp_varid", &ivarid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+    err = ncmpi_get_att_int(ncid, varid, "rcomp_varid", &rvarid);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_att_int fail");
+    }
+
+    err = ncmpi_get_var_int_all(ncid, varid, len.dataPtr());
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_get_var_int fail");
+    }
+    off[0] = 0;
+    for(i = 0; i < ngrid; i++){
+        off[i + 1] = off[i] + len[i];
+    }
+
+    Vector<int> grids_to_read;
+    if (lev <= finestLevel()) {
+        for (MFIter mfi(*m_dummy_mf[lev]); mfi.isValid(); ++mfi) {
+            grids_to_read.push_back(mfi.index());
+        }
+    } else {
+        
+        // we lost a level on restart. we still need to read in particles
+        // on finer levels, and put them in the right place via Redistribute()
+        
+        const int rank = ParallelDescriptor::MyProc();
+        const int NReaders = ParticleType::MaxReaders();
+        if (rank >= NReaders) return;
+        
+        const int Navg = ngrid / NReaders;
+        const int Nleft = ngrid - Navg * NReaders;
+        
+        int lo, hi;
+        if (rank < Nleft) {
+            lo = rank*(Navg + 1);
+            hi = lo + Navg + 1;
+        } 
+        else {
+            lo = rank * Navg + Nleft;
+            hi = lo + Navg;
+        }
+        
+        for (int i = lo; i < hi; ++i) {
+            grids_to_read.push_back(i);
+        }
+    }
+
+    const int iChunkSize = 2 + NStructInt + NumIntComps();
+    const int rChunkSize = AMREX_SPACEDIM + NStructReal + NumRealComps();
+    nrgrid = static_cast<int>(grids_to_read.size());
+    Vector<Vector<int>> istuff(nrgrid);
+    Vector<Vector<Real>> rstuff(nrgrid);
+
+    for(int i = 0; i < static_cast<int>(grids_to_read.size()); ++i) {
+        const int grid = grids_to_read[i];
+        
+        if (len[grid] <= 0) continue;
+
+        istuff[i] = Vector<int>(len[grid] * iChunkSize);
+        rstuff[i] = Vector<Real>(len[grid] * rChunkSize);
+
+        start[0] = off[grid];
+        start[1] = 0;
+        count[0] = len[grid];
+        count[1] = iChunkSize;
+        err = ncmpi_iget_vara_int(ncid, ivarid, start, count, istuff[i].dataPtr(), NULL);
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_get_var_int fail");
+        }
+
+        count[1] = rChunkSize;
+#ifdef BL_USE_FLOAT
+        err = ncmpi_iget_vara_float(ncid, rvarid, start, count, rstuff[i].dataPtr(), NULL);
+#else
+        err = ncmpi_iget_vara_double(ncid, rvarid, start, count, rstuff[i].dataPtr(), NULL);
+#endif
+        if (err != NC_NOERR){
+            amrex::Error("ncmpi_iget_vara fail");
+        }
+    }
+
+    err = ncmpi_wait_all(ncid, NC_REQ_ALL, NULL, NULL);
+    if (err != NC_NOERR){
+        amrex::Error("ncmpi_wait_all fail");
+    }
+
+    // Now reassemble the particles.
+    for(int i = 0; i < static_cast<int>(grids_to_read.size()); ++i) {
+        const int grd = grids_to_read[i];
+        int*   iptr = istuff[i].dataPtr();
+        Real* rptr = rstuff[i].dataPtr();
+        
+        
+        ParticleType p;
+        ParticleLocData pld;
+
+        Vector<std::map<std::pair<int, int>, Gpu::HostVector<ParticleType> > > host_particles;
+        host_particles.reserve(15);
+        host_particles.resize(finest_level_in_file+1);
+
+        Vector<std::map<std::pair<int, int>,
+                        std::vector<Cuda::HostVector<Real> > > > host_real_attribs;
+        host_real_attribs.reserve(15);
+        host_real_attribs.resize(finest_level_in_file+1);
+
+        Vector<std::map<std::pair<int, int>,
+                        std::vector<Cuda::HostVector<int> > > > host_int_attribs;
+        host_int_attribs.reserve(15);
+        host_int_attribs.resize(finest_level_in_file+1);
+
+        for (int i = 0; i < len[grd]; i++) {
+            p.m_idata.id   = iptr[0];
+            p.m_idata.cpu  = iptr[1];
+            
+            iptr += 2;
+                
+            for (int j = 0; j < NStructInt; j++) {
+                p.m_idata.arr[2+j] = *iptr;
+                ++iptr;
+            }
+
+            BL_ASSERT(p.m_idata.id > 0);
+            
+            AMREX_D_TERM(p.m_rdata.pos[0] = rptr[0];,
+                        p.m_rdata.pos[1] = rptr[1];,
+                        p.m_rdata.pos[2] = rptr[2];);
+            
+            rptr += AMREX_SPACEDIM;
+            
+            for (int j = 0; j < NStructReal; j++) {
+                p.m_rdata.arr[AMREX_SPACEDIM+j] = *rptr;
+                ++rptr;
+            }
+
+            locateParticle(p, pld, 0, finestLevel(), 0);
+            
+            std::pair<int, int> ind(grd, pld.m_tile);
+
+            host_real_attribs[lev][ind].resize(NumRealComps());
+            host_int_attribs[lev][ind].resize(NumIntComps());
+            
+            // add the struct
+            host_particles[lev][ind].push_back(p);
+
+            // add the real...
+            for (int i = 0; i < NumRealComps(); i++) {
+                host_real_attribs[lev][ind][i].push_back(*rptr);
+                ++rptr;
+            }
+                
+            // ... and int array data
+            for (int i = 0; i < NumIntComps(); i++) {
+                host_int_attribs[lev][ind][i].push_back(*iptr);
+                ++iptr;
+            }        
+        }
+
+        for (int host_lev = 0; host_lev < static_cast<int>(host_particles.size()); ++host_lev) {
+            for (auto& kv : host_particles[host_lev]) {
+                auto grid = kv.first.first;
+                auto tile = kv.first.second;
+                const auto& src_tile = kv.second;
+                    
+                auto& dst_tile = GetParticles(host_lev)[std::make_pair(grid,tile)];
+                auto old_size = dst_tile.GetArrayOfStructs().size();
+                auto new_size = old_size + src_tile.size();
+                dst_tile.resize(new_size);
+                            
+                Cuda::thrust_copy(src_tile.begin(),
+                            src_tile.end(),
+                            dst_tile.GetArrayOfStructs().begin() + old_size);
+                
+                for (int i = 0; i < NumRealComps(); ++i) {
+                        Cuda::thrust_copy(host_real_attribs[host_lev][std::make_pair(grid,tile)][i].begin(),
+                                            host_real_attribs[host_lev][std::make_pair(grid,tile)][i].end(),
+                                            dst_tile.GetStructOfArrays().GetRealData(i).begin() + old_size);
+                }
+                
+                for (int i = 0; i < NumIntComps(); ++i) {
+                        Cuda::thrust_copy(host_int_attribs[host_lev][std::make_pair(grid,tile)][i].begin(),
+                                            host_int_attribs[host_lev][std::make_pair(grid,tile)][i].end(),
+                                            dst_tile.GetStructOfArrays().GetIntData(i).begin() + old_size);
+                }
+            }
+        }
+        Gpu::Device::streamSynchronize();
+    }
 }
 #endif
 

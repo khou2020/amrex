@@ -180,7 +180,8 @@ int main(int argc, char* argv[])
         }
         
         ncmpi_create(MPI_COMM_WORLD, "particle.nc", 0, MPI_INFO_NULL, &ncid);
-        myPC.Checkpoint_PNC(ncid, "pc0", false, particle_realnames, particle_intnames);
+        myPC.Checkpoint_PNC(ncid, "pc0", true, particle_realnames, particle_intnames);
+        myPC.Restart_PNC(ncid, "pc0");
         ncmpi_close(ncid);
     }
 

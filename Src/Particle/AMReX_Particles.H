@@ -842,8 +842,7 @@ protected:
     void ReadParticles (int cnt, int grd, int lev, std::ifstream& ifs, int finest_level_in_file);
 
 #if defined(BL_USE_MPI) && defined(BL_USE_PNETCDF)   
-    template <class RTYPE>
-    void ReadParticles_PNC (int lev, int ncid, const std::string& pcname, int *varid);
+    void ReadParticles_PNC (int lev, int ncid, const std::string& pcname, int varid, int finest_level_in_file);
 #endif
 
     void SetParticleSize ();
